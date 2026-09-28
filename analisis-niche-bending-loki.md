@@ -1,147 +1,216 @@
-# Niche bending: de "Felix + Jesús" (Sad Monarch) a "Loki, el que lo perdió todo"
+# Niche bending: Sad Monarch + "Dan & Claude" → Loki, el que lo perdió todo
 
-> **Nota sobre fuentes.** Desde este entorno Instagram, TikTok, X y Patreon están bloqueados, así que no pude ver los reels ni las métricas de ninguna de las dos cuentas. Lo que sí está confirmado sale de búsquedas públicas: el nombre del personaje (Felix), el estilo low-poly, la música "hopecore", los versículos que usan y la descripción del canal. Lo que aparece como **[inferido]** es mi lectura del patrón del género, no algo que haya visto cuadro por cuadro. Para **@claudehelper** no encontré nada indexado públicamente (ver sección 3).
-
----
-
-## 1. Sad Monarch Animation: el ADN del formato
-
-**Lo confirmado**
-- Es una "serie indie 3D" de animaciones cristianas cortas y reconfortantes. El protagonista es **Felix, un dinosaurio pequeño y tierno**, que habla con **Jesús** sobre "los problemas por los que todos pasamos".
-- El estilo es **low-poly 3D** y la música es de estilo **"hopecore"**.
-- Cada pieza se ancla en un versículo, por ejemplo **Salmo 4:8** (dormir en paz), **Jeremías 29:11** (planes y futuro), **Mateo 16:26** (ganar el mundo y perder el alma), **Salmo 34:18** (cercano a los quebrantados de corazón) y **Mateo 6:26** (las aves del cielo).
-- El lema del canal es *"We just like animation and Jesus"*. Publican en IG, TikTok (@sadmonarchanim, que también tiene una versión en español), YouTube Shorts, Facebook y Patreon.
-
-### 1.1 Estilo visual [inferido del género low-poly + hopecore]
-| Variable | Cómo se ve | Por qué funciona |
-|---|---|---|
-| Geometría | Low-poly, pocas caras, sin texturas complejas | Es barato de producir, se lee bien en pantallas pequeñas y trae nostalgia de los juegos indie y la PS1 |
-| Paleta | Pasteles, atardeceres, azul noche y luz cálida | La luz carga la emoción ("después de la oscuridad viene la luz") |
-| Escala | Personaje diminuto en un paisaje enorme | Transmite soledad y vulnerabilidad sin decir una palabra |
-| Cámara | Planos lentos, dolly suave, pocos cortes | Da una sensación de calma y retiene al espectador sin agobiarlo |
-| Animación | Ciclos simples (idle, caminar, sentarse, abrazo) | Todo el peso emocional recae en un solo gesto final |
-| Texto | Subtítulos grandes y centrados, frases cortas | La mayoría ve los videos sin sonido |
-
-### 1.2 Estructura narrativa (plantilla de 20 a 40 s) [inferido]
-| Tiempo | Beat | Función |
-|---|---|---|
-| 0–2 s | **Hook de dolor**: Felix solo, cabizbajo, bajo la lluvia o de noche. Texto: *"Cuando sientes que…"* | El espectador se reconoce en el problema antes de hacer scroll |
-| 2–8 s | **El problema en palabras de Felix**: "Estoy cansado", "Fallé otra vez", "Nadie me ve" | Primera persona, vocabulario de 12 años |
-| 8–12 s | **Llega el mentor**: Jesús entra en cuadro, se sienta al lado y no interrumpe | La presencia pesa más que el sermón |
-| 12–25 s | **Reencuadre**: una o dos frases que dan la vuelta al problema | Es la frase que la gente captura y comparte |
-| 25–32 s | **Gesto físico**: abrazo, mano en el hombro, caminar juntos hacia la luz | La música sube justo aquí |
-| 32–40 s | **Cierre con la cita** (versículo) en pantalla y un fundido | Da autoridad y motiva a guardar el video |
-
-### 1.3 Selección de temas: la fórmula
-**Dolor universal + promesa concreta + fuente con autoridad.**
-Los temas cubren a cualquier persona, sea creyente o no: cansancio, ansiedad, insomnio, sentirse insuficiente, compararse, fracaso, soledad, miedo al futuro y éxito vacío. El versículo le da al video "permiso" para ser sentimental.
-
-### 1.4 Por qué se vuelve viral
-1. **Proyección**: Felix no es humano, así que no tiene edad, raza ni género, y cualquiera se ve en él.
-2. **Contraste de ternura**: un dinosaurio tierno contando problemas adultos.
-3. **Serialización**: un personaje recurrente crea fandom ("¿qué le pasa hoy a Felix?").
-4. **Compartibilidad**: "envíaselo a alguien que lo necesite". Los shares y guardados son la métrica que más empuja en IG y TikTok.
-5. **Comentarios-testimonio**: la gente cuenta su propia historia y eso infla el engagement.
+**Material analizado**
+- Capturas de perfil de @sad_monarch_animation, @claudehelper y @danborgia.
+- 3 videos vistos cuadro por cuadro (muestreo cada 0,5 s en el de Sad Monarch y cada 1 s en los otros dos):
+  - Sad Monarch, *"Matthew 6:26"* (37 s).
+  - Dan Borgia, *"Claude, build me a million dollar app"* (89 s). Es el del muelle con faro, **409K vistas**.
+  - @claudehelper, *"Gotcha.md: when to use it and how is it different from CLAUDE.md"* (86 s). Es el de la oficina, **42.7K vistas**.
+- Los diálogos vienen de los subtítulos quemados en el video. El audio suena continuo en los tres (voz con música de fondo), pero no pude transcribirlo.
 
 ---
 
-## 2. Matriz de extracción y adaptación de variables
+## 0. El hallazgo principal
 
-| Variable | Sad Monarch | Versión Loki | Nota |
+Los tres perfiles usan **el mismo meta-formato**:
+
+> **Un personaje "proxy" (ingenuo o vulnerable, que representa al espectador) le plantea un problema a un mentor sabio en un mundo 3D acogedor y minimalista. El diálogo va subtitulado frase por frase y termina con una frase que se guarda o se comparte.**
+
+| | Proxy (espectador) | Mentor | Carga útil | Cierre |
+|---|---|---|---|---|
+| Sad Monarch | Felix (dinosaurio preocupado) | Jesús (consuelo) | Versículo | Loop al plano inicial |
+| Dan & Claude | Dan (quiere atajos) | Claude (preguntas socráticas, humor seco) | Framework práctico | Chiste callback |
+| @claudehelper | Chico rubio (dev olvidadizo) | Claude (igual) | Tip técnico + lista | "Brother." / "Now you get it." |
+
+**Además, @claudehelper es un clon validado de @danborgia.** Usan el mismo bloque naranja como Claude, las mismas muletillas (*"Brother."*, *"Now you get it."*), la misma tipografía serif y el mismo código de color en los subtítulos. Con 7 posts ya suma 50K, 42.7K y 39.6K vistas. Eso demuestra que **el formato se puede replicar y el algoritmo lo premia aunque el nicho ya tenga dueño**, que es justo lo que queremos hacer con Loki.
+
+**Dato clave de @danborgia:** su único video con él hablando a cámara tiene **3.6K** vistas, frente a 409K del animado. El valor está en los personajes y el mundo, no en la persona.
+
+---
+
+## 1. Métricas de los perfiles (según tus capturas)
+
+| Cuenta | Seguidores | Posts | Vistas visibles | Lectura |
+|---|---|---|---|---|
+| @sad_monarch_animation ✔️ | **778K** | **18** | 1.2M · 2.1M · 2.8M | ~43K seguidores por post: calidad por encima de cantidad. Cada miniatura muestra el texto "Jesus" (el primer cuadro), lo que funciona como marca |
+| @danborgia | 4,933 | 9 | 409K · 98.7K · 26.9K · 3.6K (el de cámara) | El creador original del formato "Dan & Claude episodes" |
+| @claudehelper (NEW) | 3,392 | 7 | 50.2K · 42.7K · 39.6K · 29.4K · 5.4K · 3.6K | Llega mucho más allá de sus seguidores. Publica "1 or 2 videos a day" |
+
+**Mecánicas de comunidad de Sad Monarch** (bio y destacados):
+- Bio: *"Hi I'm Sad Monarch I'm… Trying my best"* seguido de *"Want us to pray for you?"* y un email `prayforme@`.
+- La gente les envía sus problemas. Eso crea vínculo y, de paso, **es un banco de temas gratis**.
+- Destacados: **FanArts** y **PrayForMe**. El fandom produce contenido para ellos.
+
+---
+
+## 2. Sad Monarch: "Matthew 6:26", cuadro por cuadro (37 s)
+
+| Tiempo | Plano | Subtítulo | Función |
 |---|---|---|---|
-| **Mentor** | Jesús: sabio desde la perfección | **Loki: sabio desde la caída** | Esta **inversión** es el corazón del niche bend. Jesús consuela desde arriba; Loki habla desde el suelo: "yo lo hice peor que tú y sigo aquí" |
-| **Protagonista vulnerable** | Felix, dinosaurio | Criatura original pequeña (propuesta: un **cachorro de lobo**) | Hace eco de Fenrir, el hijo que le quitaron. Loki aconseja al cachorro como no pudo cuidar al suyo, y eso da un subtexto emocional enorme |
-| **Autoridad del consejo** | Versículo bíblico | **El mito**: "La vez que…" + la fuente (Edda) en pantalla | Por ejemplo: *"Gylfaginning: Loki inventó la red que lo atrapó."* |
-| **Escenario** | Campos, noche, lluvia | Ruinas nórdicas, **la cueva donde está encadenado**, el lago helado, auroras, Yggdrasil | |
-| **Firma visual recurrente** | Luz cálida al final | **La gota de veneno** que cae (y el cuenco de Sigyn) | Es un símbolo del dolor que no se va. Puede abrir o cerrar cada episodio |
-| **Música** | Hopecore (piano e indie) | Hopecore nórdico: piano con tagelharpa o lira suave, drones y coros lejanos | |
-| **Gesto final** | Abrazo | Loki, todavía encadenado, le alcanza la mano al cachorro, o el cachorro se acurruca contra él | |
-| **Audiencia** | Cristianos y personas que buscan esperanza | Personas que sienten que **fallaron**, arruinaron algo o no encajan. Suma a fans de mitología y de Marvel, es muy amplia y no religiosa | |
-| **Tono** | Dulce y consolador | Agridulce, honesto y con humor seco. Es la ternura de alguien que ya no finge | |
+| 0–1 s | **General de espaldas**: Jesús y Felix en una colina, cielo plano amarillo, disco de sol naranja y un solo árbol | "Jesus" | **Hook de llamada**: el nombre del mentor, que además es la miniatura |
+| 1–2,5 s | Igual; Felix gira la cabeza | "Yes, Felix?" | Respuesta: se presenta el dúo en 2 s |
+| 2,5–4 s | Medio a dos: Felix se agarra la panza, Jesús a su lado | "I'm worried / about my future" | **Problema universal** |
+| 4–6,5 s | Medio; Felix con la mirada baja y la mano de Jesús en la cadera | "What are you worried about?" | Pregunta del mentor, no sermón |
+| 6,5–13 s | **Perfil cerrado de Felix** mirando al cielo | "I'm worried about / what I'll eat… / where I'll get money… / and… / **and who I might lose.**" | **Regla de 3 con escalada**: comida → dinero → *pérdida*. La pausa ("and…") antes de la tercera es el golpe emocional |
+| 13–17 s | Frontal a dos: Jesús abraza a Felix | "My child… / Do not worry / about these things." | Consuelo con contacto físico |
+| 17–19 s | Jesús levanta el brazo al cielo | "Look at the birds" | Transición a la metáfora visual |
+| 19–28 s | **Inserto de fondo amarillo plano con siluetas de pájaros low-poly** | "in the sky / They do not sow or reap, / or store away in barns, / yet your Heavenly Father feeds them" | El versículo **visualizado literalmente** con dos elementos (color plano y pájaros): barato y muy legible |
+| 28–32 s | Sobre el hombro, de espaldas, hacia el sol | "So do not be afraid. / Your Father knows what you need" | La promesa |
+| 32–34 s | **Primer plano de Jesús mirando a cámara** (cara con textura realista sobre cuerpo simple) | "And I will be with you" | **Rompe la cuarta pared**: le habla al espectador, no a Felix |
+| 34–37 s | **El mismo plano general de espaldas del inicio** | "Thanks Jesus" | **Loop perfecto**: el final empata con el principio y el video se repite solo |
 
-### ⚠️ Aviso legal importante
-El Loki de **Marvel** (su diseño, el casco con cuernos verde y dorado, la cara de Tom Hiddleston, la TVA, Sylvie, Mobius) es **propiedad de Disney y Marvel**. El Loki de la **mitología nórdica** es de dominio público. Diseña uno propio: pelo rojizo, **cicatrices en los labios** (del castigo de Brokkr, que es una firma visual perfecta), ropa gastada y cadenas. Vas a seguir aprovechando las búsquedas de "Loki" sin arriesgar que te den de baja la cuenta.
-
----
-
-## 3. @claudehelper
-
-No pude acceder a la cuenta (Instagram está bloqueado en este entorno) y no hay nada indexado sobre ella en buscadores. No voy a inventar su análisis. Si me pasas **3 o 5 capturas o enlaces de sus reels más vistos** (o me describes qué hacen), extraigo estas variables:
-
-| Variable | Qué mirar |
-|---|---|
-| Formato | ¿Es un personaje, pantalla grabada, texto sobre video o avatar? |
-| Promesa | ¿Qué gana el espectador? (atajo, truco, dato, emoción) |
-| Hook (0–2 s) | La primera frase y la primera imagen |
-| Ritmo | Cortes por segundo y duración total |
-| Estructura | Problema → solución, lista, antes/después, POV… |
-| CTA | "Comenta X", "guarda", "sígueme para la parte 2" |
-| Por qué es nuevo | Qué combina que antes no existía (el niche bend que *ellos* hicieron) |
-
-Con eso podemos cruzar las variables de las dos cuentas. Por ejemplo, si @claudehelper usa el formato "un asistente resuelve tu problema en 20 s", eso encaja con un **"Loki responde"**: la gente comenta su problema y Loki le contesta en el siguiente video. Es una mecánica de comentario → episodio que alimenta la serie sola.
+### Estilo visual
+- **Felix**: mascota 3D suave (no low-poly), turquesa con panza amarilla, **párpados morados caídos** (cara de cansado, coherente con "Sad" Monarch), púas rojas y pulseras rojas. Es tierno sin ser infantil.
+- **Jesús**: cuerpo simple con **cara fotorrealista**. Ese contraste un poco *uncanny* genera comentarios y memes.
+- **Mundo**: pasto de cubos low-poly, cielo en degradado plano amarillo y naranja, un sol como disco y un solo árbol. **Muy pocos assets**, así que un episodio sale rápido.
+- **Subtítulos**: fuente **pixel/8-bit**, blanca con contorno negro, centrada a media pantalla, de 1 a 5 palabras por tarjeta y de ~1 a 2 s cada una.
+- **Montaje**: ~9 cortes en 37 s (uno cada ~4 s), con cámara lenta y siete tipos de plano.
+- **Guion**: paráfrasis de **Mateo 6:25-34** más una promesa personal ("And I will be with you"). Las preocupaciones de Felix salen *del propio versículo* (comida, dinero) y suma una moderna y emocional ("who I might lose").
 
 ---
 
-## 4. La vida de Loki convertida en un banco de temas
+## 3. Dan & Claude: "Build me a million dollar app", cuadro por cuadro (89 s, 409K)
 
-Cada mito se traduce en un problema humano universal y en un consejo.
-
-| # | Mito (Edda) | Problema humano | Frase-consejo de Loki |
+| Tiempo | Plano | Diálogo (blanco = Dan · **amarillo = Claude**) | Función |
 |---|---|---|---|
-| 1 | Hijo de gigantes, vivió entre dioses | No pertenecer, sentirse el raro de la familia | "Pasé siglos intentando ganarme una mesa que nunca fue mía. Construye la tuya." |
-| 2 | Corta el pelo de Sif y, para arreglarlo, consigue que los enanos forjen el Mjölnir | Cometer un error grave | "Mi peor broma terminó forjando el martillo de Thor. Tu error no es el final de la historia, depende de lo que hagas después." |
-| 3 | Apuesta su cabeza con Brokkr y le cosen los labios | Hablar de más, mentir, palabras que hieren | "Me cosieron la boca por no saber callar. Las cicatrices se fueron, la lección no." |
-| 4 | Provoca el rapto de Idun y lo obligan a rescatarla | Hacerse responsable | "Nadie iba a arreglar mi desastre. Nadie va a arreglar el tuyo. Y eso también es libertad." |
-| 5 | Se convierte en yegua para salvar a Asgard y nace Sleipnir | Sacrificios que nadie ve ni agradece | "Salvé a Asgard y se rieron de cómo lo hice. Haz lo correcto igual." |
-| 6 | Le arrebatan a sus hijos: Fenrir encadenado, Jörmungandr al mar y Hel al inframundo | Duelo, perder lo que amas, lo que no controlas | "No pude protegerlos. Aprendí a amar lo que no puedo retener." |
-| 7 | Causa la muerte de Baldr | Culpa, envidia, lo que no se puede deshacer | "Hay cosas que no se deshacen. Se cargan, y se aprende a caminar con ellas." |
-| 8 | Lokasenna: insulta a todos los dioses en un banquete | Amargura, resentimiento, decir verdades con crueldad | "Tenía razón en casi todo lo que dije. Y aun así perdí, porque lo dije para herir." |
-| 9 | Inventa la red de pesca, y luego la usan para atraparlo | Autosabotaje | "Yo tejí la red que me atrapó. Revisa qué estás tejiendo tú." |
-| 10 | Encadenado en la cueva; Sigyn sostiene el cuenco contra el veneno | Quién se queda contigo en lo peor | "Cuando todo cayó, una sola persona se quedó sosteniendo el cuenco. Esa es tu gente." |
-| 11 | La tierra tiembla cuando el veneno le cae | El dolor que escondes sale igual | "Los terremotos son mi dolor escapándose. Lo que no sueltas, te sacude." |
-| 12 | Cambiaformas (salmón, mosca, yegua, foca) | Identidad, máscaras, no saber quién eres | "Fui mil formas para caerle bien a todos. La única que no probé fue la mía." |
-| 13 | Ragnarök y el mundo renace | Tocar fondo y volver a empezar | "Hasta el fin del mundo fue un comienzo. El tuyo también puede serlo." |
-
-**Posicionamiento del canal (una línea):** *"Consejos de un dios que lo perdió todo."*
+| 0–5 s | General: muelle al atardecer, faro, los dos pescando | "Claude." / "Build me a million dollar app." / "Make no mistakes." | **Hook meme**: el prompt que todos se burlan de haber escrito |
+| 5–8 s | Primer plano de Claude, luego Dan | **"Who is it for, brother?"** / "People with money." | El mentor responde **con una pregunta** y el proxy suelta un chiste |
+| 8–12 s | Claude | **"You got a customer, or just a revenue goal?"** | Reencuadre |
+| 12–16 s | Dan | "My buddy runs a landscaping business. / He spends all night making quotes." | Caso concreto |
+| 16–19 s | De espaldas: cubeta, linterna y cuaderno | **"Good. Ask him to show you the last three."** | Instrucción accionable |
+| 19–24 s | Dan / Claude | "Then we build an AI quoting app?" / **"Then we find out where the time goes."** | Frena el impulso del proxy |
+| 24–28 s | Claude | **"Measuring yards? Pricing jobs? Chasing people who never buy?"** | **Lista de 3** |
+| 28–31 s | **Plano submarino**: peces low-poly bajo el muelle | **"Three different problems."** / **"Exactly. Ask:"** | Cambio visual para romper la monotonía |
+| 31–38 s | Claude | **"show me the last time. / What did you try? / What did it cost you?" / "Not, would you use my app?"** | Framework (3 preguntas) y anti-patrón |
+| 38–44 s | Claude | **"He is your friend. / He will say yes / and never log in."** | Humor seco con verdad |
+| 44–53 s | General, luego **inserto del cuaderno** ("LOOK FIRST / TEST SMALL") | "So where do you come in?" / **"Bring me those notes. We separate what he said from what we are guessing. Pick one painful step."** | La utilería refuerza el framework |
+| 53–61 s | Claude / Dan | **"Build the smallest way to improve it."** / "How do we know it works?" / **"Try it on his next real quote. Measure the time saved. Then offer a paid pilot."** | Pasos |
+| 61–66 s | Claude | **"Compliments are easy. / Commitment tells you more."** | **Aforismo capturable**, la frase del video |
+| 66–70 s | Dan / Claude | "So I need evidence, / not a million dollar guess." / **"Now you got it."** | El proxy **verbaliza la lección**, y el mentor la valida con la muletilla |
+| 71–78 s | De espaldas | **"I can help you build faster. / I cannot make people care."** / "And the no mistakes part?" / **"Make the first mistake small enough to learn from."** | **Callback al hook** ("make no mistakes") |
+| 80–81 s | **~1 s de silencio** (medido en el audio) | — | Pausa antes del remate |
+| 81–89 s | Submarino | "Think we are using the right bait?" / **"Brother."** / **"You have not put any on."** | **Chiste final** que une el escenario (pesca = conseguir clientes) con la lección |
 
 ---
 
-## 5. Guiones de ejemplo (formato de 30 s)
+## 4. @claudehelper: "Gotcha.md", cuadro por cuadro (86 s)
 
-### Episodio 1: "Cuando arruinaste algo importante" (mito 2)
-| Tiempo | Imagen | Texto o voz |
+| Tiempo | Plano | Diálogo | Función |
+|---|---|---|---|
+| 0–4 s | General: sala de descanso de oficina, donas, café, reloj | "Claude… you already have a CLAUDE.md, right?" / **"Yes."** | Hook con la duda que busca la audiencia |
+| 4–11 s | Primer plano de Claude (con corbata y taza humeante) | "So you know the project." / **"I know how the project wants me to behave."** / "Same thing." / **"No."** | Conflicto en cuatro líneas |
+| 11–22 s | General | "Okay… what's the difference?" / **"CLAUDE.md tells me things like: Use this stack. Run these tests. Don't touch these folders. Follow these conventions."** | Lista de 4 |
+| 22–30 s | General | "Exactly. So we're good." / **"Brother."** / **"Last week you spent three hours debugging an API that returns 200 when it fails."** | Muletilla y dolor específico que reconoce cualquier dev |
+| 30–40 s | Primer plano del humano | **"Where did you write that down?"** / "I remember it." / **"You won't."** / "I will." / **"You asked me the same thing twice this morning."** / "Fair." | Roast al proxy: humor por contraste |
+| 40–46 s | **Inserto cenital**: hojas "CLAUDE.md" y "GOTCHA.md" junto a las donas | **"That goes in GOTCHA.md."** / "Gotcha." / **"Exactly."** / "Wait." / **"Yeah."** | Juego de palabras con el nombre del archivo; la utilería explica el concepto |
+| 46–56 s | General y primer plano de Claude | "So CLAUDE.md is basically: 'This is how we work.'" / **"Yes."** / "And GOTCHA.md is: 'This looks normal…'" / **"…but it will ruin your afternoon."** | Definición en una sola frase que se puede compartir |
+| 56–68 s | General | **"You just add it into the repository like an MD file. You tell CLAUDE.md to always check GOTCHA.md. That way we can limit the mistakes we make over and over again."** | El cómo |
+| 68–80 s | General | "What else goes in there?" / **"Don't rename this route. This migration breaks production. That button looks unused. It isn't. And don't touch auth."** | Lista con giro ("It isn't.") |
+| 80–86 s | General | "Why is auth always in there?" / **"Because you people keep touching it."** / **"Brother."** / **"Now you get it."** | Chiste final y la muletilla de cierre |
+
+---
+
+## 5. Las variables extraídas (el ADN común)
+
+| # | Variable | Cómo la usan | Regla para copiar |
+|---|---|---|---|
+| 1 | **Dúo proxy + mentor** | Felix/Jesús · Dan/Claude · Dev/Claude | El proxy dice lo que piensa el espectador, incluso lo tonto |
+| 2 | **Hook en 1–2 s** | Nombre del mentor ("Jesus", "Claude.") y luego la petición o la duda | Primera tarjeta = nombre del mentor. Segunda = el problema en palabras del público |
+| 3 | **El mentor pregunta antes de enseñar** | "What are you worried about?" · "Who is it for, brother?" | Nunca sermón directo |
+| 4 | **Regla de 3 con escalada** | comida → dinero → *perder a alguien* · yards → pricing → chasing | La tercera siempre duele o hace reír |
+| 5 | **Aforismo capturable** | "Compliments are easy. Commitment tells you more." · "This looks normal… but it will ruin your afternoon." | Una frase de menos de 10 palabras por video, pensada para captura de pantalla |
+| 6 | **El proxy verbaliza la lección** | "So I need evidence, not a million dollar guess." | Justo antes del cierre |
+| 7 | **Muletillas de serie** | "Brother." (reacción) · "Now you get it." (cierre) · "Yes, Felix?" | Dos muletillas fijas crean marca y memes |
+| 8 | **Inserto visual de la metáfora** | Pájaros en fondo plano · cuaderno LOOK FIRST · hojas CLAUDE/GOTCHA · plano submarino | Un plano por video que *muestra* la idea con 1 o 2 elementos |
+| 9 | **Cierre con loop o callback** | Vuelve al plano inicial · regresa al "make no mistakes" · el chiste del cebo | El final retoma el principio |
+| 10 | **Mundo acogedor, pocos assets** | Colina y sol · muelle con faro · sala de descanso con donas | Un set por episodio, luz cálida, estética de "cozy game" |
+| 11 | **Subtítulos con código** | Pixel font blanca (SM) · serif con **blanco = humano / amarillo = Claude** | Color por personaje: no hace falta animar bocas |
+| 12 | **Ritmo** | Un corte cada 3–5 s, cámara lenta, 5–7 tipos de plano que se repiten | Guion de 30–40 tarjetas de subtítulo |
+| 13 | **Duración según la carga** | 37 s si es emocional, 85–90 s si es educativo | Emoción: 35–45 s. Emoción más lección práctica: 60–75 s |
+| 14 | **Título = búsqueda** | "Gotcha.md: when to use it and how is it different from claude.md" | El título responde una duda real |
+| 15 | **Comunidad** | Email PrayForMe y FanArts · "open to FAQ's" | Canal para que la audiencia mande problemas, que se vuelven episodios |
+
+---
+
+## 6. Adaptación: Loki
+
+### 6.1 El niche bend
+- **Jesús** consuela desde la perfección. **Claude** enseña desde la competencia. **Loki** aconseja **desde la caída**: "yo lo hice peor que tú y sigo aquí".
+- Loki es un *trickster*, así que el humor seco de Claude ("Brother.") **es natural en él**, y la ternura de Sad Monarch sale de su dolor. Une los dos formatos ganadores.
+- **Audiencia**: cualquiera que sienta que falló, que no encaja o que perdió algo. Suma a fans de mitología y de Marvel, y no es religiosa. Es más amplia que la de los dos originales.
+
+### 6.2 Mapa de variables
+| Variable | Original | Loki |
 |---|---|---|
-| 0–2 s | Cachorro de lobo sentado frente a un tazón roto, de noche, en la nieve | **"Cuando sientes que lo arruinaste todo…"** |
-| 2–7 s | Primer plano del cachorro con las orejas caídas | Cachorro: "Lo rompí. Siempre rompo todo." |
-| 7–11 s | Se oye una cadena. Paneo hasta Loki, sentado contra una roca, con cicatrices en los labios | Loki (sonríe de lado): "¿Siempre? Qué exagerado. Yo sí rompo todo." |
-| 11–22 s | Flashback low-poly: Sif sin pelo, los enanos forjando y un martillo que brilla | "Una vez le corté el pelo a una diosa. Para arreglarlo tuve que ir con los enanos… y de ese desastre salió el martillo de Thor." |
-| 22–28 s | Loki le acerca los pedazos del tazón al cachorro; la música sube | "Tu error no es el final. Es el material." |
-| 28–32 s | Fundido a blanco. Texto: *"Skáldskaparmál — el mito del pelo de Sif"* | CTA en pantalla: *"Mándaselo a alguien que se está castigando hoy."* |
+| Proxy | Felix / Dan | **Cachorro de lobo** (original). Hace eco de Fenrir, el hijo que le quitaron, y eso da subtexto emocional |
+| Mentor | Jesús / Claude | **Loki encadenado**: sarcástico, cansado, sabio |
+| Hook | "Jesus" / "Yes, Felix?" | **"Loki." / "¿Qué hiciste ahora, cachorro?"** |
+| Muletilla de reacción | "Brother." | **"Cachorro…"** (con suspiro) |
+| Muletilla de cierre | "Now you get it." | **"Ahora sí entiendes."** |
+| Muletilla propia | — | **"Créeme. Yo lo intenté."** (antes de contar su mito) |
+| Carga útil | Versículo / framework | **El mito** como anécdota, más una lista de 3 pasos concretos |
+| Inserto visual | Pájaros en fondo plano | **Siluetas low-poly sobre color plano** que cuentan el mito (pelo de Sif, la fragua, la red) |
+| Firma recurrente | Loop al plano inicial | **La gota de veneno** que cae en el plano inicial y final, con el cuenco de Sigyn |
+| Set | Colina con sol / muelle | **La cueva**: roca, cadenas, aurora boreal en la entrada, fogata pequeña |
+| Subtítulos | Pixel blanca / serif con color | Cachorro en **blanco**, Loki en **ámbar fuego** (Loki se asocia al fuego) |
+| Cita final | "Matthew 6:26" | **"Edda prosaica — Skáldskaparmál"** en pantalla |
+| Comunidad | PrayForMe | **"Cuéntale a Loki qué arruinaste"**: los comentarios y DMs se vuelven episodios |
 
-### Episodio 2: "Cuando nadie te agradece" (mito 5)
-Hook: *"Cuando das todo y nadie lo nota…"* → el cachorro ayudó y lo ignoraron → Loki: "Yo salvé la muralla de Asgard y se burlaron de mí durante siglos" → reencuadre: "Haz lo correcto porque es correcto, no por el aplauso" → gesto: el cachorro se acurruca → cita en pantalla.
+### ⚠️ Legal
+El Loki de **Marvel** (diseño, casco verde y dorado, la cara del actor, la TVA) es de Disney. El Loki **mitológico** es de dominio público. Usa un diseño propio: pelo rojizo, **cicatrices en los labios** (el castigo de Brokkr), ropa gastada y cadenas. Evita el verde y dorado.
 
-### Episodio 3: "Cuando te sientes solo en lo peor" (mito 10, el más fuerte, guárdalo para cuando tengas audiencia)
-Hook: la gota de veneno cae a cámara lenta. *"¿Quién sostiene el cuenco por ti?"* → Loki encadenado, Sigyn en silueta → "Perdí a los dioses, a mis hijos, mi nombre. Una sola persona se quedó." → cierre: "No necesitas a todos. Necesitas a quien se queda."
+### 6.3 Banco de temas (mito → problema → frase)
+| # | Mito | Problema humano | Aforismo de Loki |
+|---|---|---|---|
+| 1 | Hijo de gigantes que vivió entre dioses | No pertenecer | "Pasé siglos ganándome una mesa que no era mía. Construye la tuya." |
+| 2 | Corta el pelo de Sif; para arreglarlo, los enanos forjan el Mjölnir | Arruinaste algo | "Tu error no se borra. Se repara." |
+| 3 | Le cosen los labios (Brokkr) | Hablar de más, mentir | "Las cicatrices se fueron. La lección no." |
+| 4 | Provoca el rapto de Idun y lo obligan a rescatarla | Hacerse responsable | "Nadie iba a arreglar mi desastre. Eso también es libertad." |
+| 5 | Salva la muralla de Asgard; nace Sleipnir | Nadie te agradece | "Haz lo correcto aunque se rían de cómo." |
+| 6 | Le quitan a sus hijos | Duelo, lo que no controlas | "Aprendí a amar lo que no puedo retener." |
+| 7 | Muerte de Baldr | Culpa | "Hay cosas que no se deshacen. Se cargan." |
+| 8 | Lokasenna: insulta a los dioses | Amargura | "Tenía razón. Y perdí igual, porque lo dije para herir." |
+| 9 | Inventa la red que lo atrapa | Autosabotaje | "Yo tejí la red que me atrapó. Revisa qué estás tejiendo." |
+| 10 | Sigyn sostiene el cuenco | Quién se queda | "No necesitas a todos. Necesitas a quien sostiene el cuenco." |
+| 11 | Terremotos por el veneno | Reprimir el dolor | "Lo que no sueltas, te sacude." |
+| 12 | Cambiaformas | Máscaras, identidad | "Fui mil formas. La única que no probé fue la mía." |
+| 13 | Ragnarök y el mundo renace | Tocar fondo | "Hasta el fin del mundo fue un comienzo." |
 
 ---
 
-## 6. Producción
-- **Pipeline low-poly**: Blender, con packs low-poly gratuitos (Quaternius tiene lobos y animales animados) y un rig simple para Loki. Si prefieres generar con IA, los modelos de video de Higgsfield funcionan con un *character sheet* de Loki y del cachorro para mantener la consistencia. Te lo puedo armar.
-- **Formato**: 9:16, de 25 a 40 s, subtítulos quemados y centrados, un solo gesto emocional por video.
-- **Voz**: Loki grave, cansado y con humor seco. El cachorro es mudo o habla con frases muy cortas. El texto en pantalla debe funcionar sin audio.
-- **Cadencia**: de 4 a 5 episodios por semana usando el banco de 13 mitos. Después, los temas salen de los comentarios ("Loki responde").
-- **KPIs a vigilar**: shares y guardados por cada 1.000 vistas (más que los likes), retención a los 3 s (el hook) y el % que ve hasta el final (el momento de la cita).
-- **Español primero**: Sad Monarch ya tiene versión en español, pero en el nicho "mitología + consejo" en español hay menos competencia.
+## 7. Guion piloto: "Cuando lo arruinaste todo" (≈40 s, estructura de los 3 videos)
+
+| Tiempo | Plano | Subtítulo (blanco = cachorro · **ámbar = Loki**) | Variable |
+|---|---|---|---|
+| 0–1 s | **General de espaldas**: Loki encadenado en la roca, el cachorro sentado a su lado, aurora en la entrada. Cae una **gota de veneno** | "Loki." | Hook con el nombre (#2) |
+| 1–2,5 s | Igual; Loki gira la cabeza | **"¿Qué hiciste ahora, cachorro?"** | Llamada y respuesta |
+| 2,5–8 s | Perfil cerrado del cachorro, orejas caídas | "Arruiné algo importante. / Le mentí a mi manada… / mi mejor amigo ya no me habla… / y creo que no tiene arreglo." | Regla de 3 con escalada (#4) |
+| 8–9 s | Primer plano de Loki | **"Cachorro…"** | Muletilla (#7) |
+| 9–13 s | Medio a dos | **"Créeme. Yo lo intenté. / Una vez le corté el pelo a una diosa. Mientras dormía."** / "¿Por qué?" / **"Me pareció gracioso."** | Humor seco |
+| 13–22 s | **Inserto de color plano** (ámbar): siluetas low-poly de pelo dorado cayendo, una fragua con chispas y un martillo que se eleva | **"Su esposo era Thor. / Para salvar mi cuello fui con los enanos. / Forjaron pelo de oro… / y de paso, un martillo."** | Metáfora visual (#8) |
+| 22–30 s | Medio | "¿Y qué hago yo?" / **"Tres cosas: / di exactamente qué hiciste. / No expliques por qué. / Ofrece algo que puedas cumplir."** | Lista práctica, pensada para guardarse (#5) |
+| 30–33 s | **Primer plano de Loki a cámara** | **"Tu error no se borra. Se repara."** | Aforismo y cuarta pared (#5) |
+| 33–36 s | Medio | "Entonces… no lo arruiné para siempre." / **"Ahora sí entiendes."** | El proxy verbaliza la lección (#6) |
+| 36–38 s | **El mismo plano general del inicio**; cae otra gota de veneno | "¿Y tú le pediste perdón a Sif?" / **"…Siguiente pregunta."** | Loop y chiste final (#9) |
+| 38–40 s | Texto en pantalla | *Edda prosaica — Skáldskaparmál* | Cita con autoridad |
+
+**Título:** "Loki: qué hacer cuando arruinaste algo importante"
+**Pie de post:** "Cuéntale a Loki qué arruinaste 👇 (el mejor comentario es el próximo episodio)"
+
+---
+
+## 8. Producción y lanzamiento
+- **Sets**: 3 fijos que se reutilizan (la cueva, el lago helado, las ruinas de Asgard al atardecer), con iluminación cálida y aurora.
+- **Personajes**: Loki y el cachorro. Mantén la consistencia con una *character sheet* si generas con IA (Higgsfield), o con Blender y assets low-poly (Quaternius tiene lobos animados gratis).
+- **Subtítulos**: de 1 a 6 palabras por tarjeta, a media pantalla, blanco o ámbar con contorno.
+- **Voz**: Loki grave y cansado, con timing de comedia (deja **~1 s de silencio antes del remate**, como en el video de Dan). El cachorro, más agudo.
+- **Cadencia**: arranca con 1 video al día durante 2 semanas (como @claudehelper, para encontrar el tema que pega) y luego pasa a calidad (Sad Monarch tiene 778K con solo 18 posts).
+- **KPIs**: retención a 3 s (hook), % de vistas completas y repeticiones (loop), guardados por la lista y compartidos por el aforismo.
 
 ---
 
 ## Fuentes
-- [Sad Monarch (@sad_monarch_animation) — Instagram](https://www.instagram.com/sad_monarch_animation/)
-- [Sad Monarch Animation — TikTok discover](https://www.tiktok.com/discover/sad-monarch-animation)
-- [Felix Dinosaur and Jesus — TikTok discover](https://www.tiktok.com/discover/felix-dinosaur-and-jesus)
-- [Sad Monarch Animation — YouTube Shorts](https://www.youtube.com/@SadMonarchAnim/shorts)
-- [Sad Monarch Animation — Patreon (3D Indie series)](https://www.patreon.com/cw/SadMonarchAnimation)
-- [Post en X sobre la serie de Felix](https://x.com/chillmigratoor/status/2076266785985249300)
-- [Quaternius — Animated Lowpoly Dinosaurs/Animals](https://quaternius.itch.io/animated-lowpoly-dinosaurs)
+- Capturas de perfil y 3 videos proporcionados por el usuario (analizados cuadro por cuadro).
+- [Sad Monarch — Instagram](https://www.instagram.com/sad_monarch_animation/) · [TikTok](https://www.tiktok.com/discover/sad-monarch-animation) · [YouTube Shorts](https://www.youtube.com/@SadMonarchAnim/shorts) · [Patreon](https://www.patreon.com/cw/SadMonarchAnimation)
+- [Quaternius — assets low-poly animados](https://quaternius.itch.io/animated-lowpoly-dinosaurs)
 - [YouTube Niche Bending guide](https://www.overseeros.com/blog/youtube-niche-bending-guide)
