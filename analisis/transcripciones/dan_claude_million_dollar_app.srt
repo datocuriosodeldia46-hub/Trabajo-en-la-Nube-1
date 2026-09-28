@@ -1,0 +1,192 @@
+1
+00:00:00,333 --> 00:00:01,666
+Claude.
+
+2
+00:00:01,666 --> 00:00:04,000
+Build me a million dollar app.
+
+3
+00:00:04,000 --> 00:00:05,000
+Make no mistakes.
+
+4
+00:00:05,000 --> 00:00:06,666
+Who is it for, brother?
+
+5
+00:00:06,666 --> 00:00:08,000
+People with money.
+
+6
+00:00:08,333 --> 00:00:10,000
+You got a customer,
+
+7
+00:00:10,000 --> 00:00:11,666
+or just a revenue goal?
+
+8
+00:00:11,666 --> 00:00:14,000
+My buddy runs a landscaping business.
+
+9
+00:00:14,000 --> 00:00:16,000
+He spends all night making quotes.
+
+10
+00:00:16,000 --> 00:00:18,000
+Good. Ask him to show you
+
+11
+00:00:18,000 --> 00:00:19,333
+the last three.
+
+12
+00:00:19,333 --> 00:00:21,333
+Then we build an AI quoting app?
+
+13
+00:00:21,333 --> 00:00:22,333
+Then we find out
+
+14
+00:00:22,333 --> 00:00:24,000
+where the time goes.
+
+15
+00:00:24,000 --> 00:00:26,666
+Measuring yards? Pricingjobs?
+
+16
+00:00:26,666 --> 00:00:29,000
+Chasing people who never buy?
+
+17
+00:00:29,000 --> 00:00:30,333
+Three different problems.
+
+18
+00:00:30,333 --> 00:00:32,333
+Exactly. Ask:
+
+19
+00:00:32,333 --> 00:00:34,333
+show me the last time.
+
+20
+00:00:34,333 --> 00:00:35,666
+What did you try?
+
+21
+00:00:35,666 --> 00:00:37,333
+What did it cost you?
+
+22
+00:00:37,333 --> 00:00:39,666
+Not, would you use my app?
+
+23
+00:00:39,666 --> 00:00:41,000
+He is your friend.
+
+24
+00:00:41,000 --> 00:00:42,000
+He will say yes
+
+25
+00:00:42,000 --> 00:00:43,333
+and never log in.
+
+26
+00:00:43,666 --> 00:00:45,000
+So where do you come in?
+
+27
+00:00:45,333 --> 00:00:47,000
+Bring me those notes.
+
+28
+00:00:47,000 --> 00:00:48,666
+We separate what he said
+
+29
+00:00:48,666 --> 00:00:50,333
+from what we are guessing.
+
+30
+00:00:50,333 --> 00:00:52,333
+Pick one painful step.
+
+31
+00:00:52,333 --> 00:00:54,666
+Build the smallest way to improve it.
+
+32
+00:00:54,666 --> 00:00:56,333
+How do we know it works?
+
+33
+00:00:56,666 --> 00:00:58,666
+Tryit on his next real quote.
+
+34
+00:00:58,666 --> 00:01:00,333
+Measure the time saved.
+
+35
+00:01:00,333 --> 00:01:02,666
+Then offer a paid pilot.
+
+36
+00:01:02,666 --> 00:01:04,000
+Compliments are easy.
+
+37
+00:01:04,000 --> 00:01:06,000
+Commitment tells you more.
+
+38
+00:01:06,000 --> 00:01:07,333
+So I need evidence,
+
+39
+00:01:07,333 --> 00:01:09,000
+not a million dollar guess.
+
+40
+00:01:09,333 --> 00:01:10,666
+Now you got it.
+
+41
+00:01:10,666 --> 00:01:13,000
+I can help you build faster.
+
+42
+00:01:13,000 --> 00:01:15,000
+I cannot make people care.
+
+43
+00:01:15,333 --> 00:01:17,000
+And the no mistakes part?
+
+44
+00:01:17,000 --> 00:01:18,333
+Make the first mistake
+
+45
+00:01:18,333 --> 00:01:20,333
+small enough to learn from.
+
+46
+00:01:21,333 --> 00:01:23,000
+Think we are using the right bait?
+
+47
+00:01:23,333 --> 00:01:24,333
+Brother.
+
+48
+00:01:24,333 --> 00:01:26,333
+You have not put any on.
+

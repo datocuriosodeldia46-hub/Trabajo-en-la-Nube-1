@@ -1,0 +1,290 @@
+[
+  {
+    "inicio": 0.3333333333333333,
+    "fin": 1.6666666666666665,
+    "texto": "Claude.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 1.6666666666666667,
+    "fin": 4.0,
+    "texto": "Build me a million dollar app.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 4.0,
+    "fin": 5.0,
+    "texto": "Make no mistakes.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 5.0,
+    "fin": 6.666666666666666,
+    "texto": "Who is it for, brother?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 6.666666666666667,
+    "fin": 8.0,
+    "texto": "People with money.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 8.333333333333334,
+    "fin": 10.0,
+    "texto": "You got a customer,",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 10.0,
+    "fin": 11.666666666666668,
+    "texto": "or just a revenue goal?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 11.666666666666666,
+    "fin": 14.0,
+    "texto": "My buddy runs a landscaping business.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 14.0,
+    "fin": 16.0,
+    "texto": "He spends all night making quotes.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 16.0,
+    "fin": 18.0,
+    "texto": "Good. Ask him to show you",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 18.0,
+    "fin": 19.333333333333332,
+    "texto": "the last three.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 19.333333333333332,
+    "fin": 21.333333333333332,
+    "texto": "Then we build an AI quoting app?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 21.333333333333332,
+    "fin": 22.333333333333332,
+    "texto": "Then we find out",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 22.333333333333332,
+    "fin": 24.0,
+    "texto": "where the time goes.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 24.0,
+    "fin": 26.666666666666664,
+    "texto": "Measuring yards? Pricingjobs?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 26.666666666666668,
+    "fin": 29.0,
+    "texto": "Chasing people who never buy?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 29.0,
+    "fin": 30.333333333333332,
+    "texto": "Three different problems.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 30.333333333333332,
+    "fin": 32.333333333333336,
+    "texto": "Exactly. Ask:",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 32.333333333333336,
+    "fin": 34.333333333333336,
+    "texto": "show me the last time.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 34.333333333333336,
+    "fin": 35.66666666666667,
+    "texto": "What did you try?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 35.666666666666664,
+    "fin": 37.333333333333336,
+    "texto": "What did it cost you?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 37.333333333333336,
+    "fin": 39.66666666666667,
+    "texto": "Not, would you use my app?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 39.666666666666664,
+    "fin": 41.0,
+    "texto": "He is your friend.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 41.0,
+    "fin": 42.0,
+    "texto": "He will say yes",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 42.0,
+    "fin": 43.333333333333336,
+    "texto": "and never log in.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 43.666666666666664,
+    "fin": 45.0,
+    "texto": "So where do you come in?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 45.333333333333336,
+    "fin": 47.0,
+    "texto": "Bring me those notes.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 47.0,
+    "fin": 48.66666666666667,
+    "texto": "We separate what he said",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 48.666666666666664,
+    "fin": 50.333333333333336,
+    "texto": "from what we are guessing.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 50.333333333333336,
+    "fin": 52.333333333333336,
+    "texto": "Pick one painful step.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 52.333333333333336,
+    "fin": 54.66666666666667,
+    "texto": "Build the smallest way to improve it.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 54.666666666666664,
+    "fin": 56.333333333333336,
+    "texto": "How do we know it works?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 56.666666666666664,
+    "fin": 58.66666666666667,
+    "texto": "Tryit on his next real quote.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 58.666666666666664,
+    "fin": 60.333333333333336,
+    "texto": "Measure the time saved.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 60.333333333333336,
+    "fin": 62.66666666666667,
+    "texto": "Then offer a paid pilot.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 62.666666666666664,
+    "fin": 64.0,
+    "texto": "Compliments are easy.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 64.0,
+    "fin": 66.0,
+    "texto": "Commitment tells you more.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 66.0,
+    "fin": 67.33333333333333,
+    "texto": "So I need evidence,",
+    "color": "blanco"
+  },
+  {
+    "inicio": 67.33333333333333,
+    "fin": 69.0,
+    "texto": "not a million dollar guess.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 69.33333333333333,
+    "fin": 70.66666666666666,
+    "texto": "Now you got it.",
+    "color": "color(h=9,s=168)"
+  },
+  {
+    "inicio": 70.66666666666667,
+    "fin": 73.0,
+    "texto": "I can help you build faster.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 73.0,
+    "fin": 75.0,
+    "texto": "I cannot make people care.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 75.33333333333333,
+    "fin": 77.0,
+    "texto": "And the no mistakes part?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 77.0,
+    "fin": 78.33333333333333,
+    "texto": "Make the first mistake",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 78.33333333333333,
+    "fin": 80.33333333333333,
+    "texto": "small enough to learn from.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 81.33333333333333,
+    "fin": 83.0,
+    "texto": "Think we are using the right bait?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 83.33333333333333,
+    "fin": 84.33333333333333,
+    "texto": "Brother.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 84.33333333333333,
+    "fin": 86.33333333333333,
+    "texto": "You have not put any on.",
+    "color": "amarillo"
+  }
+]

@@ -1,0 +1,314 @@
+[
+  {
+    "inicio": 0.6666666666666666,
+    "fin": 2.3333333333333335,
+    "texto": "Claude... you already have a",
+    "color": "blanco"
+  },
+  {
+    "inicio": 2.3333333333333335,
+    "fin": 4.0,
+    "texto": "CLAUDE.md, right?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 4.0,
+    "fin": 4.666666666666666,
+    "texto": "Yes.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 5.0,
+    "fin": 6.666666666666666,
+    "texto": "So you know the project.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 6.666666666666667,
+    "fin": 8.0,
+    "texto": "I know how the project wants",
+    "color": "blanco"
+  },
+  {
+    "inicio": 8.0,
+    "fin": 9.333333333333334,
+    "texto": "me to behave:",
+    "color": "blanco"
+  },
+  {
+    "inicio": 9.333333333333334,
+    "fin": 10.0,
+    "texto": "Same thing.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 10.333333333333334,
+    "fin": 11.0,
+    "texto": "No.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 11.0,
+    "fin": 13.0,
+    "texto": "Okay... what's the difference?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 13.0,
+    "fin": 15.333333333333334,
+    "texto": "CLAUDE.md tells me things like:",
+    "color": "blanco"
+  },
+  {
+    "inicio": 15.666666666666666,
+    "fin": 18.333333333333332,
+    "texto": "Use this stack. Run these tests.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 18.333333333333332,
+    "fin": 20.0,
+    "texto": "Don't touch these folders.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 20.0,
+    "fin": 21.333333333333332,
+    "texto": "Follow these conventions.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 22.333333333333332,
+    "fin": 23.666666666666664,
+    "texto": "Exactly. So we're good.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 24.0,
+    "fin": 24.666666666666664,
+    "texto": "Brother.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 24.666666666666668,
+    "fin": 26.666666666666664,
+    "texto": "Last week you spent three hours",
+    "color": "blanco"
+  },
+  {
+    "inicio": 26.666666666666668,
+    "fin": 29.333333333333332,
+    "texto": "debugging an API that returns 200",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 29.333333333333332,
+    "fin": 30.333333333333332,
+    "texto": "when it fails.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 30.666666666666668,
+    "fin": 31.666666666666664,
+    "texto": "...yeah.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 31.666666666666668,
+    "fin": 33.0,
+    "texto": "Where did you write that down?",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 33.0,
+    "fin": 34.0,
+    "texto": "I remember it.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 34.333333333333336,
+    "fin": 35.0,
+    "texto": "You won't.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 35.0,
+    "fin": 36.0,
+    "texto": "I will.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 36.333333333333336,
+    "fin": 38.0,
+    "texto": "You asked me the same thing twice",
+    "color": "blanco"
+  },
+  {
+    "inicio": 38.0,
+    "fin": 39.333333333333336,
+    "texto": "this morning.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 39.333333333333336,
+    "fin": 40.0,
+    "texto": "Fair.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 40.0,
+    "fin": 42.66666666666667,
+    "texto": "That goes in GOTCHA.md.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 42.666666666666664,
+    "fin": 43.333333333333336,
+    "texto": "Gotcha.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 43.666666666666664,
+    "fin": 44.66666666666667,
+    "texto": "Exactly.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 44.666666666666664,
+    "fin": 45.333333333333336,
+    "texto": "Wait.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 46.333333333333336,
+    "fin": 49.0,
+    "texto": "So CLAUDE.md is basically:",
+    "color": "blanco"
+  },
+  {
+    "inicio": 49.0,
+    "fin": 50.333333333333336,
+    "texto": "*'This is how we work.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 50.333333333333336,
+    "fin": 51.0,
+    "texto": "Yes.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 51.0,
+    "fin": 54.333333333333336,
+    "texto": "And GOTCHA.md is: \"This looks normal...'",
+    "color": "blanco"
+  },
+  {
+    "inicio": 54.333333333333336,
+    "fin": 56.66666666666667,
+    "texto": "...but it will ruin your afternoon.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 56.666666666666664,
+    "fin": 57.66666666666667,
+    "texto": "Nice.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 57.666666666666664,
+    "fin": 59.66666666666667,
+    "texto": "You just add it into the repository",
+    "color": "blanco"
+  },
+  {
+    "inicio": 59.666666666666664,
+    "fin": 61.0,
+    "texto": "lke an MD file.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 61.0,
+    "fin": 63.0,
+    "texto": "You tell CLAUDE.md to always",
+    "color": "blanco"
+  },
+  {
+    "inicio": 63.0,
+    "fin": 64.66666666666666,
+    "texto": "check GOTCHA.md.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 64.66666666666667,
+    "fin": 66.66666666666666,
+    "texto": "That way we can limit the mistakes we",
+    "color": "blanco"
+  },
+  {
+    "inicio": 66.66666666666667,
+    "fin": 68.33333333333333,
+    "texto": "make over and over again.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 68.33333333333333,
+    "fin": 69.66666666666666,
+    "texto": "What else goes in there?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 69.66666666666667,
+    "fin": 70.66666666666666,
+    "texto": "Things like:",
+    "color": "blanco"
+  },
+  {
+    "inicio": 70.66666666666667,
+    "fin": 72.33333333333333,
+    "texto": "Don't rename this route.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 72.33333333333333,
+    "fin": 74.33333333333333,
+    "texto": "This migration breaks production.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 74.33333333333333,
+    "fin": 76.0,
+    "texto": "That button looks unused.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 76.0,
+    "fin": 78.66666666666666,
+    "texto": "It isn't, And don't touch auth.",
+    "color": "amarillo"
+  },
+  {
+    "inicio": 79.0,
+    "fin": 80.66666666666666,
+    "texto": "Why is auth always in there?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 81.0,
+    "fin": 83.0,
+    "texto": "Because you people keep touching it.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 83.33333333333333,
+    "fin": 84.0,
+    "texto": "Brother.",
+    "color": "blanco"
+  },
+  {
+    "inicio": 84.0,
+    "fin": 85.0,
+    "texto": "Now you get it.",
+    "color": "blanco"
+  }
+]

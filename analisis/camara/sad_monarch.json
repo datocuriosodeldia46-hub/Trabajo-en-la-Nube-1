@@ -1,0 +1,232 @@
+{
+  "resumen": {
+    "duracion_s": 36.3,
+    "planos": 9,
+    "cortes_por_minuto": 14.9,
+    "duracion_media_plano_s": 3.97,
+    "planos_con_movimiento": 3,
+    "rafagas_de_movimiento": 1
+  },
+  "planos": [
+    {
+      "plano": 1,
+      "inicio": 0.0,
+      "fin": 2.6,
+      "duracion": 2.6,
+      "zoom": 1.005,
+      "pan_px": -0.4,
+      "tilt_px": -1.4,
+      "rot_deg": 0.0,
+      "inliers_medio": 0.96,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 2,
+      "inicio": 2.6,
+      "fin": 6.8,
+      "duracion": 4.2,
+      "zoom": 0.999,
+      "pan_px": -0.7,
+      "tilt_px": 0.9,
+      "rot_deg": -0.2,
+      "inliers_medio": 0.93,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 3,
+      "inicio": 6.8,
+      "fin": 12.9,
+      "duracion": 6.1,
+      "zoom": 1.004,
+      "pan_px": -1.1,
+      "tilt_px": -0.8,
+      "rot_deg": -0.1,
+      "inliers_medio": 0.93,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 4,
+      "inicio": 12.9,
+      "fin": 17.2,
+      "duracion": 4.3,
+      "zoom": 0.999,
+      "pan_px": -0.1,
+      "tilt_px": 0.2,
+      "rot_deg": -0.0,
+      "inliers_medio": 0.92,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 5,
+      "inicio": 17.2,
+      "fin": 17.3,
+      "duracion": 0.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": 0.0,
+      "rot_deg": 0.0,
+      "inliers_medio": 1.0,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 6,
+      "inicio": 17.3,
+      "fin": 17.4,
+      "duracion": 0.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": 0.0,
+      "rot_deg": 0.0,
+      "inliers_medio": 1.0,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 7,
+      "inicio": 17.4,
+      "fin": 17.5,
+      "duracion": 0.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": 0.0,
+      "rot_deg": 0.0,
+      "inliers_medio": 1.0,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 8,
+      "inicio": 17.5,
+      "fin": 24.0,
+      "duracion": 6.5,
+      "zoom": 0.47,
+      "pan_px": 126.5,
+      "tilt_px": 205.5,
+      "rot_deg": 1.8,
+      "inliers_medio": 0.86,
+      "movimiento": [
+        "pull-out / zoom out ×0.47",
+        "paneo/travelling ← 47% del ancho",
+        "tilt/grúa ↑ 43% del alto"
+      ]
+    },
+    {
+      "plano": 9,
+      "inicio": 24.0,
+      "fin": 24.1,
+      "duracion": 0.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": 0.0,
+      "rot_deg": 0.0,
+      "inliers_medio": 1.0,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 10,
+      "inicio": 24.1,
+      "fin": 24.2,
+      "duracion": 0.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": 0.0,
+      "rot_deg": 0.0,
+      "inliers_medio": 1.0,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 11,
+      "inicio": 24.2,
+      "fin": 24.3,
+      "duracion": 0.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": 0.0,
+      "rot_deg": 0.0,
+      "inliers_medio": 1.0,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 12,
+      "inicio": 24.3,
+      "fin": 25.7,
+      "duracion": 1.4,
+      "zoom": 1.0,
+      "pan_px": 0.1,
+      "tilt_px": -0.2,
+      "rot_deg": 0.0,
+      "inliers_medio": 0.84,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 13,
+      "inicio": 25.7,
+      "fin": 28.0,
+      "duracion": 2.3,
+      "zoom": 1.025,
+      "pan_px": -137.4,
+      "tilt_px": 25.6,
+      "rot_deg": -4.9,
+      "inliers_medio": 0.93,
+      "movimiento": [
+        "paneo/travelling → 51% del ancho",
+        "roll -5°"
+      ]
+    },
+    {
+      "plano": 14,
+      "inicio": 28.0,
+      "fin": 32.1,
+      "duracion": 4.1,
+      "zoom": 1.0,
+      "pan_px": 0.0,
+      "tilt_px": -0.1,
+      "rot_deg": -0.0,
+      "inliers_medio": 0.96,
+      "movimiento": [
+        "fijo"
+      ]
+    },
+    {
+      "plano": 15,
+      "inicio": 32.1,
+      "fin": 36.3,
+      "duracion": 4.2,
+      "zoom": 0.938,
+      "pan_px": 3.4,
+      "tilt_px": 15.9,
+      "rot_deg": -0.7,
+      "inliers_medio": 0.91,
+      "movimiento": [
+        "pull-out / zoom out ×0.94"
+      ]
+    }
+  ],
+  "rafagas": [
+    {
+      "inicio": 17.9,
+      "fin": 18.6,
+      "pico": 10.521596908569336
+    }
+  ]
+}
