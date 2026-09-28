@@ -36,6 +36,13 @@ Los tres perfiles usan **el mismo meta-formato**:
 | @danborgia | 4,933 | 9 | 409K · 98.7K · 26.9K · 3.6K (el de cámara) | El creador original del formato "Dan & Claude episodes" |
 | @claudehelper (NEW) | 3,392 | 7 | 50.2K · 42.7K · 39.6K · 29.4K · 5.4K · 3.6K | Llega mucho más allá de sus seguidores. Publica "1 or 2 videos a day" |
 
+**Lo que dicen las miniaturas (qué funciona y qué no)**
+- **Los posts "meta" fracasan**: la fiesta de "1K followers" de @claudehelper tiene 3.6K vistas y el video de Dan hablando a cámara también 3.6K. Al público le interesa el episodio, no el creador.
+- **En @claudehelper ganan los dolores concretos del día a día**: "…and you're changing the login page" (50.2K), "Use this stack. Run these tests." (42.7K). Los temas más abstractos rinden menos: "databases. Which one do I…" tiene 5.4K.
+- **Cada episodio cambia de set** (oficina, biblioteca, lago, playa, ciudad de noche, muelle, parque, fogata) **pero los personajes son los mismos**. La variedad visual mantiene fresco el feed sin romper la marca.
+- **Portada**: Sad Monarch siempre abre con la tarjeta "Jesus", así que todo su feed es reconocible. @claudehelper y Dan abren a media frase, sin portada diseñada. Para Loki conviene imitar a Sad Monarch: que el primer cuadro siempre sea **"Loki."**.
+- **Sad Monarch amplía el elenco**: su tercer destacado (❤️🦖🐈) sugiere un personaje nuevo, un gato. Para Loki, la versión equivalente sería sumar a Sigyn o a un cuervo más adelante.
+
 **Mecánicas de comunidad de Sad Monarch** (bio y destacados):
 - Bio: *"Hi I'm Sad Monarch I'm… Trying my best"* seguido de *"Want us to pray for you?"* y un email `prayforme@`.
 - La gente les envía sus problemas. Eso crea vínculo y, de paso, **es un banco de temas gratis**.
