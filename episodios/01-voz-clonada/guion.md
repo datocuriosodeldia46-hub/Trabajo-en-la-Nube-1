@@ -22,11 +22,15 @@
 | **Remate / loop** | 64–73 s | Mamá: *"Nuestra palabra clave será… Firulais."* · (1 s de silencio) · Claude: *"Señora."* · GPT: *"12 mil seguidores."* · vibra el teléfono otra vez | Callback al quiebre 2 y loop al primer cuadro |
 
 ## Personajes y códigos
-- **Mamá**: cuerpo simple con **cara fotorrealista** (el recurso de la cara de Jesús en Sad Monarch) y mandíbula animada por shader según el volumen de su voz. Subtítulo blanco.
+- **Mamá**: cuerpo low-poly facetado (estilo de la referencia de Dan: articulaciones, tenis de suela blanca) con **cara fotorrealista** (el recurso de Sad Monarch) y mandíbula animada según el volumen de su voz. Gesticula con los brazos y cabecea cuando habla. Subtítulo blanco.
 - **Hijo**: solo voz, con filtro de teléfono (altavoz). Subtítulo azul claro.
-- **ChatGPT** (esfera blanca, visor negro, ojos verde azulado): rápido y entusiasta. Tiene dos aciertos: la idea de la pregunta y encontrar el perfil. Subtítulo verde azulado.
-- **Claude** (bloque naranja): calmado y seco. Muletilla: *"Señora."*. Subtítulo naranja.
+- **ChatGPT**: el nudo del logo trazado de la imagen original y extruido en 3D. Flota como un ítem de videojuego, el nudo gira, tiene la cara en el hexágono central y manos flotantes. Rápido y entusiasta. Tiene dos aciertos: la idea de la pregunta y encontrar el perfil. Subtítulo verde azulado.
+- **Claude** (bloque naranja voxel): calmado y seco. Da brinquitos al hablar y mece las patitas. Muletilla: *"Señora."*. Subtítulo amarillo, como en la referencia.
 - **Firulais** (perro voxel): reacciona a su nombre, que es el gag visual.
+
+## Estilo visual
+- Render a 1/3 de resolución escalado sin suavizado: el pixelado de la referencia. Subtítulos nítidos en serif con sombra.
+- Todo facetado (flat shading), con cielo por bandas, nubes pixeladas con borde iluminado y una isla de voxeles en la ventana.
 
 ## Cámara (medida en los videos de referencia y aplicada aquí)
 - Corte en cada cambio de hablante, con un acercamiento sutil de ~5–10% dentro de cada plano.

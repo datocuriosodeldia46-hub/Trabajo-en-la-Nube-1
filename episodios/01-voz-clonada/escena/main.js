@@ -8,6 +8,7 @@ const qs = new URLSearchParams(location.search);
 const W = +(qs.get('w') || 1080);
 const H = +(qs.get('h') || 1920);
 const S = W / 1080; // escala de la interfaz 2D
+const PX = +(qs.get('px') || 3); // factor de pixelado (como la referencia)
 const FUENTE = '"Pixelify", monospace';
 
 // ───────────────────────── utilidades ─────────────────────────
@@ -22,7 +23,7 @@ const pop = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : 1 + 2.2 * Math.pow(t - 1, 3) + 1.2
 function mat(color, o = {}) {
   return new THREE.MeshStandardMaterial({
     color, roughness: o.rough ?? 0.85, metalness: o.metal ?? 0,
-    flatShading: o.flat ?? false, emissive: o.emissive ?? 0x000000, emissiveIntensity: o.ei ?? 1,
+    flatShading: o.flat ?? true, emissive: o.emissive ?? 0x000000, emissiveIntensity: o.ei ?? 1,
     transparent: o.transparent ?? false, opacity: o.opacity ?? 1,
   });
 }
@@ -39,7 +40,7 @@ function en(obj, x, y, z) { obj.position.set(x, y, z); return obj; }
 const glCanvas = document.createElement('canvas');
 const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(1);
-renderer.setSize(W, H, false);
+renderer.setSize(Math.round(W / PX), Math.round(H / PX), false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -80,7 +81,8 @@ scene.add(luzPuerta);
 function texturaCanvas(w, h, dibujar) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   dibujar(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false;
   return t;
 }
 const texPiso = texturaCanvas(512, 512, (g, w, h) => {
@@ -98,36 +100,56 @@ function cielo() {
     vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
     fragmentShader: `varying vec2 vUv;
       void main(){
-        vec3 alto=vec3(0.07,0.09,0.25), medio=vec3(0.29,0.17,0.43), bajo=vec3(0.80,0.36,0.47);
-        float y=vUv.y;
-        vec3 c=mix(bajo,medio,smoothstep(0.18,0.5,y)); c=mix(c,alto,smoothstep(0.5,0.95,y));
+        vec3 alto=vec3(0.16,0.17,0.46), medio=vec3(0.55,0.25,0.55), bajo=vec3(0.93,0.47,0.45);
+        float y=floor(vUv.y*48.)/48.;   // bandas escalonadas, como cielo de videojuego
+        vec3 c=mix(bajo,medio,smoothstep(0.2,0.5,y)); c=mix(c,alto,smoothstep(0.5,0.92,y));
         gl_FragColor=vec4(c,1.);
       }`,
     depthWrite: false,
   });
   const fondo = new THREE.Mesh(new THREE.PlaneGeometry(60, 26), shader);
   en(fondo, 0, 6, 16); fondo.rotation.y = Math.PI; g.add(fondo);
-  const lunaDisco = new THREE.Mesh(new THREE.CircleGeometry(0.9, 48), new THREE.MeshBasicMaterial({ color: '#fbeec1' }));
-  en(lunaDisco, -2.2, 5.6, 15.8); lunaDisco.rotation.y = Math.PI; g.add(lunaDisco);
-  const halo = new THREE.Mesh(new THREE.CircleGeometry(1.6, 48), new THREE.MeshBasicMaterial({ color: '#fbeec1', transparent: true, opacity: 0.12 }));
-  en(halo, -2.2, 5.6, 15.85); halo.rotation.y = Math.PI; g.add(halo);
-  const colinas = [[-6, 0.4, 5, '#3a2a5e'], [2, 0.2, 6, '#2e2352'], [8, 0.5, 5, '#3a2a5e'], [-1, -0.6, 8, '#251c45']];
-  for (const [x, y, r, c] of colinas) {
-    const m = new THREE.Mesh(new THREE.CircleGeometry(r, 9), new THREE.MeshBasicMaterial({ color: c }));
-    en(m, x, y, 15); m.rotation.y = Math.PI; m.scale.y = 0.45; g.add(m);
-  }
-  // El árbol solitario (guiño al árbol de Sad Monarch)
-  const tronco = new THREE.Mesh(new THREE.BoxGeometry(0.25, 2.2, 0.1), new THREE.MeshBasicMaterial({ color: '#1a1433' }));
-  en(tronco, 3.4, 2.2, 14.8); g.add(tronco);
-  const copa = new THREE.Mesh(new THREE.IcosahedronGeometry(1.1, 0), new THREE.MeshBasicMaterial({ color: '#1a1433' }));
-  en(copa, 3.4, 3.6, 14.8); copa.scale.set(1.2, 0.85, 0.2); g.add(copa);
-  const pos = [];
-  let s = 11;
+  const basico = (c, o = 1) => new THREE.MeshBasicMaterial({ color: c, transparent: o < 1, opacity: o });
+  const lunaDisco = new THREE.Mesh(new THREE.CircleGeometry(1.0, 24), basico('#fbe98a'));
+  en(lunaDisco, -1.6, 4.9, 15.8); lunaDisco.rotation.y = Math.PI; g.add(lunaDisco);
+  const halo = new THREE.Mesh(new THREE.CircleGeometry(1.7, 24), basico('#ffd79a', 0.18));
+  en(halo, -1.6, 4.9, 15.85); halo.rotation.y = Math.PI; g.add(halo);
+  // Nubes pixeladas: bloques morados con borde inferior iluminado
+  let s = 5;
   const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 90; i++) pos.push(lerp(-14, 14, rnd()), lerp(4.5, 13, rnd()), 15.7);
-  const estrellas = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)),
-    new THREE.PointsMaterial({ color: '#fff6d8', size: 0.07 }));
-  g.add(estrellas);
+  for (let i = 0; i < 11; i++) {
+    const nube = new THREE.Group();
+    const cx = lerp(-12, 12, rnd()), cy = lerp(3.8, 10, rnd()), ancho = lerp(1.6, 4.5, rnd());
+    for (let k = 0; k < 5; k++) {
+      const w = ancho * lerp(0.35, 0.8, rnd()), h = lerp(0.25, 0.6, rnd());
+      const x = cx + lerp(-ancho / 2, ancho / 2, rnd()), y = cy + lerp(-0.3, 0.3, rnd());
+      const base = new THREE.Mesh(new THREE.PlaneGeometry(w, h), basico('#5b4596'));
+      en(base, x, y, 15.6); base.rotation.y = Math.PI; nube.add(base);
+      const luz = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.8, h * 0.35), basico('#f59f6c'));
+      en(luz, x + 0.1, y - h * 0.42, 15.55); luz.rotation.y = Math.PI; nube.add(luz);
+    }
+    g.add(nube);
+  }
+  // Isla / cerro de voxeles con árboles en el horizonte
+  const verde = ['#1e3a37', '#264a40', '#2f5a48'];
+  for (let i = 0; i < 70; i++) {
+    const x = lerp(-10, 10, rnd()), alto = Math.max(0.2, 1.3 - Math.abs(x) * 0.12 + lerp(-0.25, 0.25, rnd()));
+    const b = new THREE.Mesh(new THREE.BoxGeometry(0.55, alto, 0.4), basico(verde[i % 3]));
+    en(b, x, alto / 2 - 0.3, 15.0 + lerp(0, 0.4, rnd())); g.add(b);
+  }
+  for (let i = 0; i < 9; i++) {
+    const x = lerp(-7, 7, rnd());
+    const tronco = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.0, 0.18), basico('#3a2a2a'));
+    en(tronco, x, 1.3, 14.8); g.add(tronco);
+    for (let k = 0; k < 3; k++) {
+      const copa = new THREE.Mesh(new THREE.BoxGeometry(0.9 - k * 0.2, 0.45, 0.5), basico(verde[(i + k) % 3]));
+      en(copa, x, 1.8 + k * 0.38, 14.7); g.add(copa);
+    }
+  }
+  const pos = [];
+  for (let i = 0; i < 60; i++) pos.push(lerp(-14, 14, rnd()), lerp(7, 13, rnd()), 15.7);
+  g.add(new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)),
+    new THREE.PointsMaterial({ color: '#fff6d8', size: 0.12 })));
   return g;
 }
 
@@ -270,17 +292,6 @@ function capsula(r, largo, color, o = {}) {
   m.castShadow = true; m.receiveShadow = true; return m;
 }
 
-// Brazo de dos segmentos: hombro → codo → mano (rotaciones en radianes)
-function brazo(color, piel, lado) {
-  const hombro = new THREE.Group();
-  const sup = capsula(0.068, 0.24, color); sup.position.y = -0.16; hombro.add(sup);
-  const codo = new THREE.Group(); codo.position.y = -0.32; hombro.add(codo);
-  const ant = capsula(0.06, 0.22, color); ant.position.y = -0.14; codo.add(ant);
-  const mano = new THREE.Mesh(new THREE.SphereGeometry(0.065, 14, 10), mat(piel)); mano.position.y = -0.3; mano.castShadow = true; codo.add(mano);
-  hombro.userData = { codo, lado };
-  return hombro;
-}
-
 // Material de la cara: foto con máscara suave + mandíbula animada por shader.
 function materialCara(textura) {
   return new THREE.ShaderMaterial({
@@ -312,38 +323,80 @@ function materialCara(textura) {
   });
 }
 
+// Pieza low-poly facetada (cilindro de pocos lados, como los personajes de la referencia)
+function cil(rt, rb, h, lados, color, o = {}) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, lados), o.material || mat(color, { flat: true, ...o }));
+  m.castShadow = true; m.receiveShadow = true; return m;
+}
+
+// Brazo articulado: hombro → codo → muñeca (mano low-poly con pulgar)
+function brazo(manga, piel, lado) {
+  const hombro = new THREE.Group();
+  const sup = cil(0.08, 0.068, 0.3, 6, manga); sup.position.y = -0.15; hombro.add(sup);
+  const codo = new THREE.Group(); codo.position.y = -0.3; hombro.add(codo);
+  const ant = cil(0.068, 0.056, 0.26, 6, manga); ant.position.y = -0.13; codo.add(ant);
+  const muneca = new THREE.Group(); muneca.position.y = -0.27; codo.add(muneca);
+  const mano = caja(0.078, 0.1, 0.042, piel, { flat: true }); mano.position.y = -0.05; muneca.add(mano);
+  const pulgar = caja(0.026, 0.055, 0.032, piel, { flat: true }); pulgar.position.set(0.048 * lado, -0.03, 0.012); pulgar.rotation.z = 0.45 * lado; muneca.add(pulgar);
+  hombro.userData = { codo, muneca, lado };
+  return hombro;
+}
+
+// Pierna sentada: cadera → rodilla, con tenis de suela blanca
+function pierna(pantalon) {
+  const cadera = new THREE.Group(); cadera.rotation.x = -Math.PI / 2;
+  const muslo = cil(0.105, 0.09, 0.4, 6, pantalon); muslo.position.y = -0.2; cadera.add(muslo);
+  const rodilla = new THREE.Group(); rodilla.position.y = -0.4; rodilla.rotation.x = Math.PI / 2; cadera.add(rodilla);
+  const espinilla = cil(0.088, 0.072, 0.42, 6, pantalon); espinilla.position.y = -0.21; rodilla.add(espinilla);
+  const tenis = caja(0.12, 0.08, 0.24, '#26262b', { flat: true }); tenis.position.set(0, -0.44, 0.05); rodilla.add(tenis);
+  const suela = caja(0.125, 0.03, 0.25, '#f2f2ee', { flat: true }); suela.position.set(0, -0.49, 0.05); rodilla.add(suela);
+  cadera.userData = { rodilla };
+  return cadera;
+}
+
 class Mama {
   constructor(texCara) {
     this.g = new THREE.Group();
-    const piel = '#c38d74', sueter = '#c98f94', pantalon = '#394061';
-    this.cadera = new THREE.Group(); this.cadera.position.set(0, 0.72, 0.02); this.g.add(this.cadera);
+    const piel = '#c38d74', sueter = '#c98f94', blusa = '#efe3d3', pantalon = '#394061', pelo = '#2b1b16';
+    this.cadera = new THREE.Group(); this.cadera.position.set(0, 0.74, 0.02); this.g.add(this.cadera);
+    const pelvis = cil(0.19, 0.2, 0.16, 6, pantalon); pelvis.position.y = 0.02; this.cadera.add(pelvis);
     this.torso = new THREE.Group(); this.cadera.add(this.torso);
-    const pecho = capsula(0.26, 0.36, sueter); pecho.position.y = 0.36; pecho.scale.set(1, 1, 0.78); this.torso.add(pecho);
-    const cuello = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 0.14, 12), mat(piel)); cuello.position.y = 0.76; this.torso.add(cuello);
-    this.cabeza = new THREE.Group(); this.cabeza.position.y = 0.84; this.torso.add(this.cabeza);
-    const craneo = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 1), mat('#2b1b16', { flat: true })); craneo.scale.set(1, 1.12, 1); craneo.position.set(0, 0.13, -0.02); craneo.castShadow = true; this.cabeza.add(craneo);
-    const mandibula = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 12), mat(piel)); mandibula.position.set(0, 0.04, 0.05); mandibula.scale.set(1, 1, 0.8); this.cabeza.add(mandibula);
-    const chongo = new THREE.Mesh(new THREE.IcosahedronGeometry(0.085, 1), mat('#2b1b16', { flat: true })); chongo.position.set(0, 0.14, -0.22); this.cabeza.add(chongo);
+    const pecho = cil(0.215, 0.175, 0.5, 6, sueter); pecho.position.y = 0.33; pecho.scale.z = 0.72; this.torso.add(pecho);
+    const hombros = cil(0.24, 0.215, 0.08, 6, sueter); hombros.position.y = 0.6; hombros.scale.z = 0.72; this.torso.add(hombros);
+    const cuello = cil(0.062, 0.07, 0.14, 6, piel); cuello.position.y = 0.7; this.torso.add(cuello);
+    this.cabeza = new THREE.Group(); this.cabeza.position.y = 0.78; this.torso.add(this.cabeza);
+    const craneo = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 0), mat(pelo, { flat: true })); craneo.scale.set(1.02, 1.15, 1.0); craneo.position.set(0, 0.15, -0.03); craneo.castShadow = true; this.cabeza.add(craneo);
+    const mechon = new THREE.Mesh(new THREE.IcosahedronGeometry(0.12, 0), mat(pelo, { flat: true })); mechon.position.set(0, 0.29, 0.03); mechon.scale.set(1.5, 0.55, 1.1); this.cabeza.add(mechon);
+    const mandibula = new THREE.Mesh(new THREE.IcosahedronGeometry(0.13, 1), mat(piel, { flat: true })); mandibula.position.set(0, 0.06, 0.05); mandibula.scale.set(1, 1.05, 0.8); this.cabeza.add(mandibula);
+    const chongo = new THREE.Mesh(new THREE.IcosahedronGeometry(0.085, 0), mat(pelo, { flat: true })); chongo.position.set(0, 0.16, -0.22); this.cabeza.add(chongo);
     this.cara = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.42, 20, 20), materialCara(texCara));
-    this.cara.position.set(0, 0.125, 0.185); this.cara.renderOrder = 2; this.cabeza.add(this.cara);
-    this.brazoI = brazo(sueter, piel, -1); this.brazoI.position.set(-0.3, 0.62, 0); this.torso.add(this.brazoI);
-    this.brazoD = brazo(sueter, piel, 1); this.brazoD.position.set(0.3, 0.62, 0); this.torso.add(this.brazoD);
-    for (const x of [-0.13, 0.13]) {
-      const muslo = capsula(0.11, 0.3, pantalon); muslo.rotation.x = Math.PI / 2; muslo.position.set(x, 0.02, 0.2); this.cadera.add(muslo);
-      const pierna = capsula(0.09, 0.34, pantalon); pierna.position.set(x, -0.26, 0.42); this.cadera.add(pierna);
-      const zapato = caja(0.13, 0.08, 0.22, '#2a2424', { r: 0.03 }); zapato.position.set(x, -0.66, 0.48); this.cadera.add(zapato);
-    }
+    this.cara.position.set(0, 0.14, 0.185); this.cara.renderOrder = 2; this.cabeza.add(this.cara);
+    this.brazoI = brazo(sueter, piel, -1); this.brazoI.position.set(-0.25, 0.6, 0); this.torso.add(this.brazoI);
+    this.brazoD = brazo(sueter, piel, 1); this.brazoD.position.set(0.25, 0.6, 0); this.torso.add(this.brazoD);
+    this.piernas = [-0.11, 0.11].map((x) => { const p = pierna(pantalon); p.position.set(x, 0.0, 0.02); this.cadera.add(p); return p; });
   }
-  pose({ inclinar = 0, alcanzar = 0, girar = 0, cabeceo = 0, abrir = 0, respirar = 0, hundirse = 0 }) {
-    this.torso.rotation.x = 0.05 + inclinar * 0.35 - hundirse * 0.18;
+  pose({ inclinar = 0, alcanzar = 0, girar = 0, cabeceo = 0, abrir = 0, hablar = 0, hundirse = 0, t = 0 }) {
+    const respiro = Math.sin(t * 1.6);
+    this.g.position.y = Math.sin(t * 2.2) * 0.006;                                    // "idle" de videojuego
+    this.torso.rotation.x = 0.05 + inclinar * 0.35 - hundirse * 0.2 + respiro * 0.012;
+    this.torso.rotation.z = Math.sin(t * 0.9) * 0.025 + hablar * Math.sin(t * 5) * 0.03;
     this.cadera.position.z = 0.02 + inclinar * 0.08 - hundirse * 0.06;
-    this.torso.scale.y = 1 + respirar * 0.012;
-    this.cabeza.rotation.y = girar;
-    this.cabeza.rotation.x = cabeceo + inclinar * 0.25 - hundirse * 0.15;
-    // brazos: reposo sobre el regazo; el derecho se estira hacia la mesa al "alcanzar"
-    this.brazoI.rotation.set(-0.45, 0, -0.12); this.brazoI.userData.codo.rotation.x = -1.25;
-    this.brazoD.rotation.set(lerp(-0.45, -1.25, alcanzar), lerp(0, -0.3, alcanzar), lerp(0.12, 0.05, alcanzar));
-    this.brazoD.userData.codo.rotation.x = lerp(-1.25, -0.35, alcanzar);
+    this.torso.scale.y = 1 + respiro * 0.012;
+    this.cabeza.rotation.y = girar + Math.sin(t * 0.7) * 0.05;
+    this.cabeza.rotation.x = cabeceo + inclinar * 0.25 - hundirse * 0.15 + hablar * Math.sin(t * 9) * 0.07;
+    this.cabeza.rotation.z = Math.sin(t * 0.8) * 0.04 + hablar * Math.sin(t * 4.3) * 0.04;
+    // Brazo izquierdo: reposo en el regazo, gesticula un poco al hablar
+    const gI = hablar * (0.5 + 0.5 * Math.sin(t * 6.1));
+    this.brazoI.rotation.set(-0.4 - gI * 0.35, 0, -0.14 - gI * 0.1);
+    this.brazoI.userData.codo.rotation.x = -1.15 - gI * 0.55;
+    this.brazoI.userData.muneca.rotation.z = gI * Math.sin(t * 7) * 0.4;
+    // Brazo derecho: estira la mano hacia la mesa (alcanzar) o gesticula
+    const gD = hablar * (0.5 + 0.5 * Math.sin(t * 5.3 + 1.7)) * (1 - alcanzar);
+    this.brazoD.rotation.set(lerp(-0.4 - gD * 0.45, -1.2, alcanzar), lerp(0, -0.3, alcanzar), lerp(0.14 + gD * 0.12, 0.05, alcanzar));
+    this.brazoD.userData.codo.rotation.x = lerp(-1.15 - gD * 0.6, -0.3, alcanzar);
+    this.brazoD.userData.muneca.rotation.z = -gD * Math.sin(t * 6.5) * 0.45;
+    // Piernas: pies que se mecen apenas
+    this.piernas.forEach((p, i) => { p.userData.rodilla.rotation.x = Math.PI / 2 + Math.sin(t * 1.7 + i * 2) * 0.05; });
     this.cara.material.uniforms.abrir.value = abrir;
   }
 }
@@ -352,55 +405,84 @@ class ClaudeBot {
   constructor() {
     this.g = new THREE.Group();
     this.cuerpo = new THREE.Group(); this.g.add(this.cuerpo);
-    const naranja = '#d77655';
-    const cuerpo = caja(0.66, 0.5, 0.46, naranja, { r: 0.035 }); cuerpo.position.y = 0.25; this.cuerpo.add(cuerpo);
-    for (const x of [-0.4, 0.4]) { const b = caja(0.15, 0.14, 0.24, naranja, { r: 0.02 }); b.position.set(x, 0.22, 0); this.cuerpo.add(b); }
-    for (const x of [-0.24, -0.1, 0.1, 0.24]) { const p = caja(0.09, 0.1, 0.1, naranja, { r: 0.015 }); p.position.set(x, -0.04, 0.17); this.cuerpo.add(p); }
+    const naranja = '#d77655', sombra = '#b85f42';
+    const cuerpo = caja(0.66, 0.5, 0.46, naranja, { flat: true }); cuerpo.position.y = 0.25; this.cuerpo.add(cuerpo);
+    this.brazos = [-1, 1].map((l) => {
+      const piv = new THREE.Group(); piv.position.set(0.33 * l, 0.25, 0);
+      const b = caja(0.15, 0.13, 0.22, naranja, { flat: true }); b.position.x = 0.07 * l; piv.add(b);
+      this.cuerpo.add(piv); return piv;
+    });
+    this.patas = [-0.22, -0.08, 0.08, 0.22].map((x, i) => {
+      const piv = new THREE.Group(); piv.position.set(x, 0.02, 0.17);
+      const p = caja(0.085, 0.13, 0.09, i % 2 ? naranja : sombra, { flat: true }); p.position.y = -0.06; piv.add(p);
+      this.cuerpo.add(piv); return piv;
+    });
     this.ojos = [];
     for (const x of [-0.13, 0.13]) {
       const o = caja(0.06, 0.14, 0.02, '#141414', { sombra: false }); o.position.set(x, 0.3, 0.232); this.cuerpo.add(o); this.ojos.push(o);
     }
   }
   pose({ hablar = 0, girar = 0, parpadeo = 1, t = 0 }) {
-    const rebote = Math.abs(Math.sin(t * 13)) * hablar;
-    this.cuerpo.position.y = rebote * 0.03 + Math.sin(t * 1.7) * 0.004;
-    this.cuerpo.scale.set(1 + rebote * 0.03, 1 - rebote * 0.03, 1);
+    const salto = Math.abs(Math.sin(t * 9)) * hablar;
+    this.cuerpo.position.y = salto * 0.07 + Math.abs(Math.sin(t * 2.1)) * 0.012;      // brinquitos al hablar
+    this.cuerpo.scale.set(1 + salto * 0.05, 1 - salto * 0.05, 1 + salto * 0.03);
+    this.cuerpo.rotation.z = Math.sin(t * 1.3) * 0.03 + hablar * Math.sin(t * 7) * 0.05;
     this.g.rotation.y = girar;
+    this.brazos.forEach((b, i) => { b.rotation.z = (i ? 1 : -1) * (0.1 + hablar * (0.3 + 0.3 * Math.sin(t * 13 + i))); });
+    this.patas.forEach((p, i) => { p.rotation.x = Math.sin(t * 3.2 + i * 1.6) * 0.35; });   // patitas colgando que se mecen
     for (const o of this.ojos) o.scale.y = parpadeo;
   }
 }
 
+// GPT: el nudo del logo extruido en 3D (contorno trazado de la imagen), con la cara en el hexágono central
 class GPTBot {
-  constructor() {
+  constructor(formas) {
     this.g = new THREE.Group();
     this.cuerpo = new THREE.Group(); this.g.add(this.cuerpo);
-    const esfera = new THREE.Mesh(new THREE.SphereGeometry(0.31, 40, 28), mat('#f3f2ec', { rough: 0.32 }));
-    esfera.position.y = 0.31; esfera.scale.y = 0.96; esfera.castShadow = true; this.cuerpo.add(esfera);
-    const visor = new THREE.Mesh(new THREE.SphereGeometry(0.316, 40, 20, Math.PI / 2 - 0.95, 1.9, 1.05, 0.95), mat('#161a20', { rough: 0.2 }));
-    visor.position.y = 0.31; visor.scale.y = 0.96; this.cuerpo.add(visor);
-    this.ojos = [];
-    for (const x of [-0.085, 0.085]) {
-      const o = capsula(0.028, 0.05, '#22d3b6', { emissive: '#22d3b6', ei: 1.4 }); o.position.set(x, 0.33, 0.29); this.cuerpo.add(o); this.ojos.push(o);
+    this.nudo = new THREE.Group(); this.cuerpo.add(this.nudo);
+    const R = 0.36;
+    const v = ([x, y]) => new THREE.Vector2(x * R, y * R);
+    for (const f of formas) {
+      const forma = new THREE.Shape(f.contorno.map(v));
+      for (const h of f.huecos) forma.holes.push(new THREE.Path(h.map(v)));
+      const geo = new THREE.ExtrudeGeometry(forma, { depth: 0.1, bevelEnabled: true, bevelThickness: 0.018, bevelSize: 0.012, bevelSegments: 1, curveSegments: 2 });
+      geo.translate(0, 0, -0.05);
+      const m = new THREE.Mesh(geo, mat('#17191e', { rough: 0.32, flat: true }));
+      m.castShadow = true; m.receiveShadow = true; this.nudo.add(m);
     }
-    this.aro = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.018, 10, 32), mat('#161a20', { rough: 0.3 }));
-    this.aro.rotation.x = Math.PI / 2; this.aro.position.y = 0.66; this.cuerpo.add(this.aro);
-    for (const x of [-0.33, 0.33]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), mat('#f3f2ec', { rough: 0.32 })); b.position.set(x, 0.24, 0.04); b.castShadow = true; this.cuerpo.add(b); }
-    for (const x of [-0.12, 0.12]) { const p = new THREE.Mesh(new THREE.SphereGeometry(0.07, 16, 12), mat('#f3f2ec', { rough: 0.32 })); p.position.set(x, 0.0, 0.16); p.scale.y = 0.7; this.cuerpo.add(p); }
+    this.cara = new THREE.Group(); this.cuerpo.add(this.cara);
+    const placa = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.07, 6), mat('#f4f3ee', { flat: true, rough: 0.45 }));
+    placa.rotation.x = Math.PI / 2; this.cara.add(placa);
+    this.ojos = [-0.034, 0.034].map((x) => {
+      const o = caja(0.022, 0.05, 0.012, '#111216', { sombra: false }); o.position.set(x, 0.008, 0.04); this.cara.add(o); return o;
+    });
+    // Manos flotantes estilo videojuego
+    this.manos = [-1, 1].map((l) => {
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 0), mat('#f4f3ee', { flat: true, rough: 0.4 }));
+      m.castShadow = true; this.cuerpo.add(m); m.userData.lado = l; return m;
+    });
     // Tableta (aparece con los "12 mil seguidores")
     this.tableta = new THREE.Group();
     this.tableta.add(caja(0.36, 0.25, 0.02, '#1b1d22', { r: 0.01 }));
     this.pantallaTab = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.22), new THREE.MeshBasicMaterial({ map: texPerfil(), toneMapped: false }));
     this.pantallaTab.position.z = 0.011; this.tableta.add(this.pantallaTab);
-    this.tableta.position.set(0, 0.36, 0.42); this.tableta.rotation.x = -0.15; this.tableta.scale.setScalar(0.001);
+    this.tableta.position.set(0, -0.08, 0.3); this.tableta.rotation.x = -0.2; this.tableta.scale.setScalar(0.001);
     this.cuerpo.add(this.tableta);
   }
-  pose({ hablar = 0, girar = 0, saltar = 0, tableta = 0, t = 0 }) {
-    const rebote = Math.abs(Math.sin(t * 15)) * hablar;
-    this.cuerpo.position.y = rebote * 0.035 + saltar * 0.22 + Math.sin(t * 2.1) * 0.005;
-    this.cuerpo.scale.set(1 + rebote * 0.025, 1 - rebote * 0.02, 1);
+  pose({ hablar = 0, girar = 0, saltar = 0, tableta = 0, parpadeo = 1, t = 0 }) {
+    this.cuerpo.position.y = 0.46 + Math.sin(t * 2.4) * 0.03 + saltar * 0.28;           // flota como ítem de videojuego
+    this.cuerpo.rotation.z = Math.sin(t * 1.1) * 0.06;
+    this.nudo.rotation.z = -t * 0.45 - saltar * Math.PI * 2;                           // el nudo gira; la cara queda derecha
+    const pulso = 1 + hablar * 0.06 * Math.abs(Math.sin(t * 16));
+    this.nudo.scale.setScalar(pulso);
     this.g.rotation.y = girar;
-    for (const o of this.ojos) o.scale.y = 1 + hablar * 0.5;
-    this.aro.rotation.z = t * 1.2;
+    for (const o of this.ojos) o.scale.y = parpadeo * (1 + hablar * 0.35);
+    this.manos.forEach((m) => {
+      const l = m.userData.lado;
+      const gesto = hablar * Math.sin(t * 10 + l);
+      m.position.set(l * (0.42 + gesto * 0.04), -0.1 + Math.sin(t * 2.4 + l) * 0.03 + Math.abs(gesto) * 0.12, 0.08 + (tableta > 0.5 ? 0.18 : 0));
+      m.rotation.set(t * 0.8, t * 0.6 * l, 0);
+    });
     this.tableta.scale.setScalar(Math.max(0.001, pop(tableta)));
   }
 }
@@ -540,8 +622,9 @@ for (const i of iconos) { i.position.set(INS_C, 2.05, 0); insertoC.add(i); }
 scene.add(cielo(), sala(), sofa(), telefono, franjaPuerta, brilloPuerta, insertoA, insertoB, insertoC);
 let mama, claude, gpt, perro, TL, M, E, K, planos;
 
-const colores = { mama: '#ffffff', hijo: '#9fd3ff', gpt: '#6ff0d0', claude: '#ffb078' };
-const posHablante = { mama: [0, 1.6, 0.1], gpt: [-0.92, 1.0, 0.05], claude: [0.94, 0.97, 0.05], hijo: [0.22, 0.52, 1.32] };
+const colores = { mama: '#ffffff', hijo: '#a9d8ff', gpt: '#8ff5de', claude: '#ffd66b' };
+const FUENTE_SUB = '"Baskerville", Georgia, serif';
+const posHablante = { mama: [0, 1.6, 0.1], gpt: [-0.92, 1.15, 0.05], claude: [0.94, 0.97, 0.05], hijo: [0.22, 0.52, 1.32] };
 
 function lineaEn(t) {
   let actual = null;
@@ -587,18 +670,18 @@ function construirPlanos() {
   add(0, M('L02') - 0.08, { de: [0.52, 0.95, 2.0], a: [0.38, 0.86, 1.78], mira: [0.22, 0.5, 1.32] });                      // 1 CU teléfono (hook)
   add(M('L02') - 0.08, E('L02') + 0.12, { de: [0, 1.68, 2.35], a: [0, 1.68, 2.12], mira: [0, 1.64, 0], ease: 'out' });     // 2 MCU mamá
   add(E('L02') + 0.12, M('L04') - 0.08, { de: [-1.95, 2.15, -2.1], a: [-1.82, 2.08, -1.95], mira: [0.45, 0.9, 2.4], fov: 58 });      // 3 general de espaldas (ventana)
-  add(M('L04') - 0.08, E('L04') + 0.12, { de: [-0.92, 1.2, 2.65], a: [-0.92, 1.2, 2.42], mira: [-0.92, 1.0, 0] });         // 4 MCU GPT
+  add(M('L04') - 0.08, E('L04') + 0.12, { de: [-0.92, 1.25, 3.35], a: [-0.92, 1.25, 3.1], mira: [-0.92, 1.12, 0] });         // 4 MCU GPT
   add(E('L04') + 0.12, M('L06') - 0.62, { de: [0.94, 1.18, 2.6], a: [0.94, 1.18, 2.42], mira: [0.94, 0.98, 0] });          // 5 MCU Claude
   add(M('L06') - 0.62, E('L06') + 0.35, { orbita: { centro: [0.1, 1.15, 0.1], radio: 2.5, radioAtras: 2.05, alt: 0.6, a0: 0.1, a1: 0.1 + Math.PI * 2 }, fov: 46 }); // 6 ÓRBITA 360°
   add(E('L06') + 0.35, E('L07') + 0.08, { de: [0, 1.7, 3.1], a: [0, 1.7, 1.4], mira: [0, 1.67, 0], ease: 'out', dur: 0.35 }); // 7 zoom de golpe a la mamá
   add(E('L07') + 0.08, M('L08') + 2.1, { de: [0.8, 1.45, 3.1], a: [0.72, 1.42, 2.9], mira: [0.45, 1.3, 0] });              // 8 mamá + Claude
   add(M('L08') + 2.1, E('L08') + 0.25, { de: [INS_A, 1.75, 6.2], a: [INS_A, 1.75, 5.6], mira: [INS_A, 1.75, 0], subBajo: true }); // 9 INSERTO clonación
-  add(E('L08') + 0.25, E('L09') + 0.12, { de: [-0.92, 1.3, 3.0], a: [-0.92, 1.3, 2.8], mira: [-0.92, 1.12, 0] });          // 10 GPT salta
+  add(E('L08') + 0.25, E('L09') + 0.12, { de: [-0.92, 1.35, 3.6], a: [-0.92, 1.35, 3.4], mira: [-0.92, 1.25, 0] });          // 10 GPT salta
   add(E('L09') + 0.12, E('L10') + 0.1, { de: [1.9, 1.42, 2.25], a: [1.75, 1.38, 2.05], mira: [0.05, 1.28, 0.55] });        // 11 mamá se inclina al teléfono
   add(E('L10') + 0.1, E('L11') - 0.55, { de: [0.46, 0.9, 1.9], a: [0.36, 0.82, 1.72], mira: [0.22, 0.5, 1.32] });          // 12 CU teléfono
   add(E('L11') - 0.55, E('L11') + 0.45, { de: [-0.45, 0.62, 3.95], a: [-0.52, 0.58, 3.75], mira: [-0.95, 0.28, 2.3] });     // 13 el perro levanta la cabeza
   add(E('L11') + 0.45, E('L12') + 0.25, { de: [0, 1.66, 2.7], a: [0, 1.66, 1.45], mira: [0, 1.6, 0.15], ease: 'inout' });  // 14 dolly lento a la mamá
-  add(E('L12') + 0.25, M('L13') + 1.05, { de: [-0.92, 1.22, 2.75], a: [-0.92, 1.22, 2.58], mira: [-0.92, 1.06, 0] });      // 15 GPT saca la tableta
+  add(E('L12') + 0.25, M('L13') + 1.05, { de: [-0.92, 1.25, 3.35], a: [-0.92, 1.25, 3.15], mira: [-0.92, 1.1, 0] });      // 15 GPT saca la tableta
   add(M('L13') + 1.05, E('L13') + 0.2, { de: [INS_B, 1.45, 6.6], a: [INS_B, 1.45, 5.9], mira: [INS_B, 1.45, 0], subBajo: true }); // 16 INSERTO perfil
   add(E('L13') + 0.2, E('L14') + 0.25, { de: [0.94, 1.18, 2.6], a: [0.94, 1.18, 2.42], mira: [0.94, 0.98, 0] });           // 17 Claude
   add(E('L14') + 0.25, M('L15') - 0.1, { de: [0.46, 0.9, 1.9], a: [0.34, 0.8, 1.68], mira: [0.22, 0.5, 1.32] });           // 18 CU teléfono (cuelga y marca)
@@ -651,7 +734,7 @@ function animar(t, plano) {
     girar: clamp(mirar([0, 1.6, 0.1], t, 'mama') * 0.45, -0.55, 0.55),
     cabeceo: -orgullo * 0.12 + (L && L.who === 'hijo' ? 0.22 : 0),
     abrir: envDe('mama', t) * 0.05,
-    respirar: Math.sin(t * 1.6),
+    hablar: envDe('mama', t), t,
   });
   // Claude
   const parpadeo = ((t % 3.7) < 0.12) ? 0.15 : 1;
@@ -662,9 +745,9 @@ function animar(t, plano) {
   const saltar = Math.max(0, Math.sin(clamp((t - M('L09')) / 0.6) * Math.PI)) * (t >= M('L09') && t < M('L09') + 0.6 ? 1 : 0);
   const tab = Math.max(smooth(M('L13') + 0.2, M('L13') + 0.7, t) * (1 - smooth(E('L13') + 0.4, E('L13') + 0.8, t)),
     smooth(M('L23'), M('L23') + 0.4, t));
-  const miraG = clamp(mirar([-0.92, 1, 0.05], t, 'gpt') * 0.6, -0.8, 0.8);
+  const miraG = clamp(mirar([-0.92, 1, 0.05], t, 'gpt') * 0.35, -0.35, 0.35); // el logo es plano: poco giro para que siempre se lea
   const giroG = plano.quietos ? lerp(miraG, 0.2, smooth(E('L21') + 0.45, E('L21') + 0.85, t)) : miraG;
-  gpt.pose({ hablar: envDe('gpt', t), girar: giroG, saltar, tableta: tab, t });
+  gpt.pose({ hablar: envDe('gpt', t), girar: giroG, saltar, tableta: tab, parpadeo: ((t + 1.3) % 4.1) < 0.12 ? 0.15 : 1, t });
   // Perro: se despierta al oír "Firulais"
   const alerta = Math.max(
     smooth(M('L11') + 0.1, M('L11') + 0.35, t) * (1 - smooth(E('L11') + 1.2, E('L11') + 1.8, t)),
@@ -714,13 +797,18 @@ function envolver(texto, maxW) {
   if (actual) lineas.push(actual);
   return lineas;
 }
-function textoConBorde(txt, x, y, color, tam) {
-  ctx.font = `${tam}px ${FUENTE}`;
-  ctx.lineJoin = 'round'; ctx.lineWidth = tam * 0.2; ctx.strokeStyle = '#000';
-  ctx.strokeText(txt, x, y); ctx.fillStyle = color; ctx.fillText(txt, x, y);
+function textoConBorde(txt, x, y, color, tam, fuente = FUENTE_SUB) {
+  ctx.font = `700 ${tam}px ${fuente}`;
+  ctx.save();
+  ctx.shadowColor = 'rgba(20,10,30,0.85)'; ctx.shadowBlur = tam * 0.28; ctx.shadowOffsetX = tam * 0.04; ctx.shadowOffsetY = tam * 0.07;
+  ctx.lineJoin = 'round'; ctx.lineWidth = tam * 0.09; ctx.strokeStyle = 'rgba(25,15,35,0.9)';
+  ctx.strokeText(txt, x, y);
+  ctx.restore();
+  ctx.fillStyle = color; ctx.fillText(txt, x, y);
 }
 function capa2D(t, plano) {
-  ctx.drawImage(glCanvas, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(glCanvas, 0, 0, W, H);
   // viñeta suave
   const v = ctx.createRadialGradient(W / 2, H * 0.48, H * 0.3, W / 2, H * 0.5, H * 0.75);
   v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(10,6,20,0.38)');
@@ -735,8 +823,8 @@ function capa2D(t, plano) {
     if (t >= (i === 0 ? 0 : ls[i].start - 0.04) && t < fin) sub = ls[i];
   }
   if (sub) {
-    const tam = 74 * S;
-    ctx.font = `${tam}px ${FUENTE}`;
+    const tam = 64 * S;
+    ctx.font = `700 ${tam}px ${FUENTE_SUB}`;
     const renglones = envolver(sub.sub, W * 0.84);
     const y0 = H * (plano.subBajo ? 0.845 : 0.685) - (renglones.length - 1) * tam * 0.6;
     renglones.forEach((r, i) => textoConBorde(r, W / 2, y0 + i * tam * 1.2, colores[sub.who], tam));
@@ -761,11 +849,16 @@ async function preparar() {
       document.fonts.add(await f.load());
     }
   } catch (e) { console.warn('fuente no disponible, uso monospace', e); }
+  try {
+    const f = new FontFace('Baskerville', 'url(/node_modules/@fontsource/libre-baskerville/files/libre-baskerville-latin-700-normal.woff2)', { weight: '700' });
+    document.fonts.add(await f.load());
+  } catch (e) { console.warn('fuente serif no disponible', e); }
+  const formasLogo = await (await fetch('/assets/logo_gpt.json')).json();
   const texCara = await new THREE.TextureLoader().loadAsync('/assets/mama_cara.png');
   texCara.colorSpace = THREE.SRGBColorSpace;
   mama = new Mama(texCara); en(mama.g, 0, 0, 0); scene.add(mama.g);
   claude = new ClaudeBot(); en(claude.g, 0.94, 0.69, 0.05); scene.add(claude.g);
-  gpt = new GPTBot(); en(gpt.g, -0.92, 0.69, 0.05); scene.add(gpt.g);
+  gpt = new GPTBot(formasLogo); en(gpt.g, -0.92, 0.69, 0.05); scene.add(gpt.g);
   perro = new Perro(); en(perro.g, -1.15, 0.01, 2.05); perro.g.rotation.y = -0.9; scene.add(perro.g);
   planos = construirPlanos();
   // Texturas que usan la fuente se redibujan ahora que cargó
