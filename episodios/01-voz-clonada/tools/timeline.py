@@ -6,15 +6,18 @@
 - Sintetiza efectos (vibración, colgar, tono de llamada, whoosh) y un pad musical.
 - Calcula la envolvente de volumen por cuadro (boca y rebote de personajes).
 
-Salida: timeline.json y audio/mezcla.wav
-Uso: python3 tools/timeline.py
+Salida: timeline.json y audio/mezcla.wav (voces con efecto de videojuego y música/efectos 8-bit de tools/retro.py)
+Uso: python3 tools/timeline.py [--preset B] [--salida audio/mezcla.wav]
 """
+import argparse
 import json
 import subprocess
 from pathlib import Path
 
 import imageio_ffmpeg
 import numpy as np
+
+import retro
 
 SR = 44100
 FPS = 30
@@ -161,6 +164,10 @@ def envolvente(x):
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--preset", default="B", choices=list(retro.PRESETS))
+    ap.add_argument("--salida", default=str(BASE / "audio" / "mezcla.wav"))
+    args = ap.parse_args()
     lineas = json.load(open(BASE / "lineas.json"))
     t = 0.0
     clips = []
@@ -168,6 +175,7 @@ def main():
         x = comprimir_pausas(recortar(decodificar(BASE / "audio" / f"{l['id']}.mp3")))
         if l["id"] in TELEFONO:
             x = filtro_telefono(x)
+        x = retro.voz_retro(x, l["who"], args.preset)
         x = fade(x / (np.abs(x).max() + 1e-9) * 0.8, 0.008)
         t += PAUSAS[l["id"]]
         clips.append((l, x, t))
@@ -186,34 +194,39 @@ def main():
                        "start": round(t0, 3), "end": round(t0 + len(x) / SR, 3), "env": envolvente(x)})
 
     fin = {s["id"]: s["end"] for s in salida}
-    # Efectos
-    pegar(efectos, vibracion(), 0.0)
-    pegar(efectos, whoosh(1.5), marcas["L06"] + 0.05)          # órbita del quiebre
-    pegar(efectos, whoosh(0.9, 0.15), marcas["L08"] + 1.9)     # entra el inserto
-    pegar(efectos, whoosh(0.9, 0.15), marcas["L17"] - 0.35)    # entran las reglas
+    # Efectos 8-bit (todo sintetizado)
     colgar = fin["L14"] + 0.45
-    for k, f in enumerate((620, 480, 360)):
-        pegar(efectos, tono([f], 0.09, 0.18), colgar + k * 0.1)
+    pegar(efectos, retro.vibracion(), 0.0)
+    pegar(efectos, retro.whoosh(1.5), marcas["L06"] - 0.55)       # órbita 360° del quiebre
+    pegar(efectos, retro.blip_inserto(), marcas["L08"] + 2.1)     # entra el inserto de clonación
+    pegar(efectos, retro.salto(), marcas["L09"])                  # GPT salta
+    pegar(efectos, retro.boing(), marcas["L11"] + 0.15)           # el perro oye "Firulais"
+    pegar(efectos, retro.blip_inserto(), marcas["L13"] + 1.05)    # inserto del perfil
+    pegar(efectos, retro.colgar(), colgar)
     for k in range(2):
-        pegar(efectos, tono([440, 480], 0.85, 0.12), colgar + 0.75 + k * 1.1)
-    pegar(efectos, vibracion(), dur - COLA + 0.35)
+        pegar(efectos, retro.tono_llamada(), colgar + 0.75 + k * 1.1)
+    pegar(efectos, retro.whoosh(0.8, 0.09), marcas["L17"] - 0.5)  # entran las reglas
+    for lid in ("L18", "L19", "L20"):
+        pegar(efectos, retro.moneda(), marcas[lid] - 0.25)        # cada regla = "moneda" (micro-recompensa)
+    pegar(efectos, retro.boing(), fin["L21"] - 0.6)
+    pegar(efectos, retro.vibracion(), dur - COLA + 0.35)
+    pegar(efectos, retro.remate(), dur - COLA + 0.4)
     marcas["colgar"] = round(colgar, 3)
     marcas["marcar"] = round(colgar + 0.6, 3)
     marcas["loop"] = round(dur - COLA + 0.35, 3)
 
-    # Música: tensión (menor) → silencio en el quiebre → latido → alivio (mayor) → silencio del remate
-    pegar(musica, pad(marcas["L06"] + 0.2, [110, 130.8, 164.8], 0.05), 0.0)
-    pegar(musica, latido(marcas["L15"] - marcas["L08"]), marcas["L08"])
-    pegar(musica, pad(marcas["L15"] - marcas["L08"], [98, 116.5, 146.8], 0.035, 2.5), marcas["L08"])
-    pegar(musica, pad(marcas["L22"] - marcas["L15"] - 0.3, [130.8, 164.8, 196, 261.6], 0.06, 2.0), marcas["L15"] + 0.4)
-    pegar(musica, pad(COLA + 1.2, [130.8, 164.8, 196], 0.04, 0.8), fin["L23"] + 0.1)
+    # Música chiptune: tensión → silencio en el quiebre → latido → alivio → silencio del remate
+    pegar(musica, retro.musica_tension(marcas["L06"] - 0.55), 0.0)
+    pegar(musica, retro.musica_suspenso(marcas["L15"] - marcas["L08"] - 0.2), marcas["L08"])
+    pegar(musica, retro.musica_alivio(marcas["L22"] - marcas["L15"] - 0.7), marcas["L15"] + 0.4)
+    pegar(musica, retro.musica_alivio(COLA + 0.6) * 0.7, fin["L23"] + 0.1)
 
     mezcla = voz + efectos + musica
     mezcla = mezcla[: int(dur * SR)]
     mezcla /= max(np.abs(mezcla).max() / 0.95, 1)
     pcm = (mezcla * 32767).astype("<i2").tobytes()
     subprocess.run([FF, "-v", "error", "-y", "-f", "s16le", "-ar", str(SR), "-ac", "1", "-i", "-",
-                    str(BASE / "audio" / "mezcla.wav")], input=pcm, check=True)
+                    args.salida], input=pcm, check=True)
 
     json.dump({"fps": FPS, "duracion": round(dur, 3), "lineas": salida,
                "marcas": {k: round(v, 3) for k, v in marcas.items()}},

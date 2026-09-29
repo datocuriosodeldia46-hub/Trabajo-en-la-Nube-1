@@ -8,7 +8,9 @@ Episodio animado en Three.js, renderizado cuadro por cuadro. Todo se reproduce d
 | `lineas.json` | Diálogo: texto para la voz (con etiquetas de emoción de ElevenLabs v3) y subtítulo |
 | `audio/LXX.mp3` | Voces generadas con ElevenLabs (eleven_v3) |
 | `assets/mama_cara.png` | Cara fotorrealista de la mamá (generada con IA, persona ficticia), recortada con máscara suave |
-| `tools/timeline.py` | Recorta silencios, comprime pausas, aplica filtro de teléfono, sintetiza efectos y música → `timeline.json` y `audio/mezcla.wav` |
+| `tools/timeline.py` | Recorta silencios, comprime pausas, aplica el filtro de teléfono y el efecto de videojuego, y mezcla música y efectos 8-bit → `timeline.json` y `audio/mezcla.wav` |
+| `tools/retro.py` | Todo el sonido retro hecho con código: bitcrusher de voz por personaje (presets A/B/C) y sintetizador chiptune (pulso, triángulo, ruido LFSR) para música y efectos |
+| `tools/pruebas_voz.py` | Pruebas de 8 s de cada preset → `audio/pruebas/` (sin gastar créditos) |
 | `escena/` | Escena Three.js (`main.js`): set, personajes, planos de cámara, insertos y subtítulos |
 | `render.mjs` | Chromium sin interfaz + ffmpeg → `render/ep01.mp4` |
 
@@ -16,7 +18,7 @@ Episodio animado en Three.js, renderizado cuadro por cuadro. Todo se reproduce d
 
 ```bash
 npm install                      # three, playwright, fuente Pixelify Sans
-python3 tools/timeline.py        # requiere numpy e imageio-ffmpeg
+python3 tools/timeline.py --preset B   # requiere numpy e imageio-ffmpeg
 node render.mjs --w 540 --h 960 --stills 0.3,16.5,47  # fotogramas de revisión
 node render.mjs                  # video final 1080×1920 a 30 fps
 ```
