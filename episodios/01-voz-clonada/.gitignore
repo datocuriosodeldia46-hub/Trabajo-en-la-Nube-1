@@ -2,3 +2,4 @@ node_modules/
 render/stills/
 render/log.txt
 __pycache__/
+render/*.mp4
