@@ -23,16 +23,21 @@ RNG = np.random.default_rng(11)
 
 # Pausa (s) ANTES de cada línea: el silencio también cuenta la historia.
 PAUSAS = {
-    "L01": 1.2,              # viento, plano de espaldas
-    "L02": 0.45, "L03": 0.7, "L04": 0.55,
-    "L05": 0.6, "L06": 0.35, "L07": 0.35,   # regla de tres que escala
-    "L08": 1.1,              # silencio antes del quiebre
-    "L09": 0.55, "L10": 0.45, "L11": 0.7, "L12": 0.6,
-    "L13": 0.55, "L14": 0.6,
-    "L15": 0.9,              # mira a cámara
-    "L16": 0.9,              # vuelta al plano de espaldas
+    "L01": 1.8,              # Lucía llega caminando sola, llorando
+    "L02": 0.6,              # llega junto a él; Jesús voltea
+    "L03": 0.55, "L04": 0.55,
+    "L05": 0.6, "L06": 0.35, "L07": 0.35, "L07b": 0.25,   # la herida escala
+    "L08": 0.9,              # silencio antes del quiebre
+    "L09": 0.45, "L10": 0.45,
+    "L10b": 0.5, "L10c": 0.6,  # Jesús le hace mirar al bebé
+    "L11": 0.6, "L12": 0.5, "L13": 0.55, "L14": 0.5,
+    "L14b": 1.8,             # el abrazo y empiezan a caminar juntos
+    "L14c": 0.6,
+    "L15": 0.8,              # se detienen; Jesús mira a cámara
+    "L16": 0.7,              # se van caminando hacia el sol
 }
-COLA = 2.2
+DURACION = 65.0              # 1:05
+
 
 
 def decodificar(ruta):
@@ -53,7 +58,7 @@ def recortar(x, umbral_db=-42, margen=0.08):
     return x[max(voz[0] - int(margen * SR), 0):min(voz[-1] + int(margen * SR), len(x))]
 
 
-def comprimir_pausas(x, maximo=0.55, umbral_db=-38):
+def comprimir_pausas(x, maximo=0.45, umbral_db=-38):
     """Acorta silencios internos muy largos, pero deja respirar los "…" (drama)."""
     sil = suavizada(x) < 10 ** (umbral_db / 20)
     partes, i, n, tope = [], 0, len(x), int(maximo * SR)
@@ -182,6 +187,20 @@ def pajaro(vol=0.025):
     return np.concatenate(partes) * vol
 
 
+def paso(vol=0.05):
+    """Pisada suave sobre pasto: ráfaga de ruido filtrado con caída rápida."""
+    n = int(0.12 * SR)
+    y = filtro(RNG.standard_normal(n), bajo=300, alto=2500 + RNG.uniform(-500, 500))
+    return y / (np.abs(y).max() + 1e-9) * np.exp(-np.arange(n) / SR * 38) * vol * RNG.uniform(0.7, 1.0)
+
+
+def pasos(pista, t0, t1, cadencia=0.62, vol=0.05, desfase=0.0):
+    t = t0 + desfase
+    while t < t1:
+        pegar(pista, paso(vol), t)
+        t += cadencia
+
+
 def pegar(pista, clip, t):
     i = int(t * SR)
     if i >= len(pista):
@@ -207,7 +226,7 @@ def main():
         t += PAUSAS[l["id"]]
         clips.append((l, x, t))
         t += len(x) / SR
-    dur = t + COLA
+    dur = max(DURACION, t + 2.5)
     N = int(dur * SR) + 2 * SR
     voz, musica, amb = np.zeros(N), np.zeros(N), np.zeros(N)
 
@@ -225,10 +244,22 @@ def main():
     for tp in np.arange(0.6, dur, 5.3) + RNG.uniform(-0.8, 0.8, len(np.arange(0.6, dur, 5.3))):
         pegar(amb, pajaro(), max(tp, 0))
 
+    # Caminatas (la escena usa las mismas marcas): sola al inicio, juntos, y hacia el sol al final
+    marcas["camina1"] = (0.25, marcas["L02"] - 0.35)
+    marcas["camina2"] = (fin["L14"] + 1.3, marcas["L15"] - 0.55)
+    marcas["camina3"] = (marcas["L16"] - 0.3, dur)
+    pasos(amb, *marcas["camina1"], cadencia=0.6, vol=0.06)
+    pasos(amb, *marcas["camina2"], cadencia=0.66, vol=0.045)
+    pasos(amb, *marcas["camina2"], cadencia=0.74, vol=0.06, desfase=0.2)
+    pasos(amb, *marcas["camina3"], cadencia=0.66, vol=0.035)
+    pasos(amb, *marcas["camina3"], cadencia=0.74, vol=0.045, desfase=0.2)
+
     # Música: nota sola de piano bajo el llanto → entra el piano en "Hija mía" → se abre en "Yo me quedo"
     pegar(musica, nota_piano(midi(57), 5, 0.05), marcas["L03"])
     pegar(musica, nota_piano(midi(53), 5, 0.05), marcas["L05"])
     pegar(musica, nota_piano(midi(52), 5, 0.05), marcas["L07"])
+    pegar(musica, nota_piano(midi(57), 1, 0.0), 0)
+    pegar(musica, nota_piano(midi(64), 6, 0.045), 0.3)
     t_piano = marcas["L08"] - 0.4
     pegar(musica, piano(marcas["L15"] - t_piano, vol=0.1), t_piano)
     pegar(musica, pad(dur - t_piano + 1), t_piano)
@@ -247,7 +278,7 @@ def main():
                     str(BASE / "audio" / "mezcla.wav")], input=pcm, check=True)
     marcas["piano"] = t_piano
     json.dump({"fps": FPS, "duracion": round(dur, 3), "lineas": salida,
-               "marcas": {k: round(v, 3) for k, v in marcas.items()}},
+               "marcas": {k: (round(v, 3) if not isinstance(v, tuple) else [round(x, 3) for x in v]) for k, v in marcas.items()}},
               open(BASE / "timeline.json", "w"), ensure_ascii=False)
     print(f"duración {dur:.1f} s")
     for s in salida:

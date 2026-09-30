@@ -219,7 +219,7 @@ class CaraPixel {
       this.elipse(cx, cy, rx, ry, (x) => ((x + Math.floor(t * 6)) % 5 === 0 ? '#ffffff' : '#bfe7ff'), (x, y, d) => d > 0.62 && y > cy + ry * 0.55);
     }
   }
-  dibujar({ cierre = 0.45, apertura = 0, llorar = 0, t = 0 }) {
+  dibujar({ cierre = 0.45, apertura = 0, llorar = 0, t = 0, sonrisa = 0 }) {
     const g = this.g, N = this.N;
     g.clearRect(0, 0, N, N);
     // rubor con tramado (pixel art)
@@ -241,7 +241,7 @@ class CaraPixel {
     const cx = 48, cy = 77;
     if (apertura < 0.15) {
       for (let x = -7; x <= 7; x++) {
-        const y = cy - Math.round(2.2 * (1 - (x / 7) ** 2));    // puchero: comisuras hacia abajo
+        const y = cy - Math.round(2.2 * (1 - 2 * sonrisa) * (1 - (x / 7) ** 2));    // puchero (comisuras abajo) → sonrisa leve
         this.p(cx + x, y, '#7d2f3a'); this.p(cx + x, y + 1, '#c7646d');
       }
     } else {
@@ -276,10 +276,12 @@ class Lucia {
     const piel = mat('#f6d2b8', { rough: 0.6 }), vestido = mat('#9d87cf', { rough: 0.75 }), pelo = mat('#3a2320', { rough: 0.55 });
     const parpado = mat('#eab3bf', { rough: 0.55 });
     // piernas y zapatos
-    for (const x of [-0.075, 0.075]) {
-      const p = capsula(0.05, 0.12, '', { material: piel }); p.position.set(x, 0.12, 0); this.g.add(p);
-      const z = malla(new RoundedBoxGeometry(0.1, 0.06, 0.15, 3, 0.025), mat('#6b4b8a')); z.position.set(x, 0.03, 0.025); this.g.add(z);
-    }
+    this.piernas = [-0.075, 0.075].map((x) => {
+      const cadera = new THREE.Group(); cadera.position.set(x, 0.24, 0); this.g.add(cadera);
+      const p = capsula(0.05, 0.12, '', { material: piel }); p.position.set(0, -0.12, 0); cadera.add(p);
+      const z = malla(new RoundedBoxGeometry(0.1, 0.06, 0.15, 3, 0.025), mat('#6b4b8a')); z.position.set(0, -0.21, 0.025); cadera.add(z);
+      return cadera;
+    });
     // vestido (torno)
     const perfil = [[0.001, 0.17], [0.3, 0.19], [0.28, 0.32], [0.22, 0.55], [0.19, 0.75], [0.17, 0.88], [0.12, 0.95], [0.001, 0.97]].map(([r, y]) => new THREE.Vector2(r, y));
     this.cuerpo = new THREE.Group(); this.g.add(this.cuerpo);
@@ -320,15 +322,19 @@ class Lucia {
     const nariz = esfera(0.011, '', { material: piel, sombra: false }); nariz.position.set(0, -0.058, 0.233); this.cabeza.add(nariz);
     if (variante === 'bebe') { this.bebe = new Bebe(); this.bebe.g.position.set(0.02, 0.66, 0.2); this.bebe.g.rotation.set(0, -0.1, 0.32); this.cuerpo.add(this.bebe.g); }
   }
-  pose({ t = 0, llorar = 0, hablar = 0, girar = 0, cabeceo = 0, sollozo = 0, secarse = 0 }) {
+  pose({ t = 0, llorar = 0, hablar = 0, girar = 0, cabeceo = 0, sollozo = 0, secarse = 0, caminar = 0, fase = 0, sonrisa = 0 }) {
     const respiro = Math.sin(t * 1.8);
+    // caminata: piernas alternadas, rebote y balanceo del cuerpo
+    this.piernas.forEach((c, i) => { c.rotation.x = Math.sin(fase + i * Math.PI) * 0.55 * caminar; });
+    const rebote = Math.abs(Math.sin(fase)) * 0.025 * caminar;
     const hipo = llorar * Math.max(0, Math.sin(t * 7.5)) * 0.5;                 // sollozos
-    this.cuerpo.position.y = respiro * 0.004 + hipo * 0.006;
+    this.cuerpo.position.y = respiro * 0.004 + hipo * 0.006 + rebote;
+    this.cuerpo.rotation.z = Math.sin(fase) * 0.035 * caminar;
     this.cuerpo.scale.set(1, 1 + respiro * 0.01, 1);
     this.cabeza.rotation.set(cabeceo + 0.1 * llorar + hablar * Math.sin(t * 8) * 0.05, girar + Math.sin(t * 0.6) * 0.04, Math.sin(t * 0.8) * 0.05 + hablar * Math.sin(t * 4) * 0.04);
     // cara: párpados caídos por la tristeza, parpadeo, boca con la voz, sollozos y lágrimas
     const parpadeo = ((t + 0.7) % 3.3) < 0.12;
-    this.caraPixel.dibujar({ cierre: parpadeo ? 1 : 0.4 + llorar * 0.14, apertura: clamp(hablar + hipo * 0.35), llorar, t });
+    this.caraPixel.dibujar({ cierre: parpadeo ? 1 : 0.4 + llorar * 0.14 - sonrisa * 0.12, apertura: clamp(hablar + hipo * 0.35), llorar, t, sonrisa });
     // brazos
     const [bi, bd] = this.brazos;
     if (this.variante === 'bebe') {
@@ -351,7 +357,12 @@ class Jesus {
   constructor(texCara) {
     this.g = new THREE.Group();
     const tunica = mat('#f1ece0', { rough: 0.8 }), piel = mat('#b8795a', { rough: 0.6 }), pelo = mat('#2d201a', { rough: 0.6, flat: true });
-    for (const x of [-0.08, 0.08]) { const s = malla(new RoundedBoxGeometry(0.1, 0.05, 0.19, 3, 0.02), mat('#7a5634')); s.position.set(x, 0.025, 0.08); this.g.add(s); const pie = esfera(0.045, '', { material: piel }); pie.position.set(x, 0.05, 0.1); pie.scale.set(1, 0.6, 1.4); this.g.add(pie); }
+    this.pies = [-0.08, 0.08].map((x) => {
+      const p = new THREE.Group(); p.position.set(x, 0, 0); this.g.add(p);
+      const s = malla(new RoundedBoxGeometry(0.1, 0.05, 0.19, 3, 0.02), mat('#7a5634')); s.position.set(0, 0.025, 0.08); p.add(s);
+      const pie = esfera(0.045, '', { material: piel }); pie.position.set(0, 0.05, 0.1); pie.scale.set(1, 0.6, 1.4); p.add(pie);
+      return p;
+    });
     const perfil = [[0.001, 0.04], [0.28, 0.05], [0.27, 0.3], [0.22, 0.8], [0.2, 1.2], [0.19, 1.32], [0.14, 1.4], [0.06, 1.44], [0.001, 1.45]].map(([r, y]) => new THREE.Vector2(r, y));
     this.cuerpo = new THREE.Group(); this.g.add(this.cuerpo);
     this.cuerpo.add(malla(new THREE.LatheGeometry(perfil, 40), tunica));
@@ -373,16 +384,18 @@ class Jesus {
     this.cara = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.418, 20, 20), materialCara(texCara, 1 - 0.734, 0.481));
     this.cara.position.set(0, 0.13, 0.18); this.cara.renderOrder = 2; this.cabeza.add(this.cara);
   }
-  pose({ t = 0, hablar = 0, girar = 0, cabeceo = 0, gesto = 'reposo', abrazar = 0, senalar = 0 }) {
-    this.cuerpo.rotation.z = Math.sin(t * 0.7) * 0.012;
+  pose({ t = 0, hablar = 0, girar = 0, cabeceo = 0, gesto = 'reposo', abrazar = 0, senalar = 0, caminar = 0, fase = 0 }) {
+    this.cuerpo.rotation.z = Math.sin(t * 0.7) * 0.012 + Math.sin(fase) * 0.03 * caminar;
+    this.cuerpo.position.y = Math.abs(Math.sin(fase)) * 0.025 * caminar;
+    this.pies.forEach((p, i) => { const f = Math.sin(fase + i * Math.PI); p.position.z = f * 0.12 * caminar; p.position.y = Math.max(0, -Math.cos(fase + i * Math.PI)) * 0.03 * caminar; });
     this.cabeza.rotation.set(cabeceo + hablar * Math.sin(t * 6) * 0.03, girar, Math.sin(t * 0.5) * 0.025);
     const [bi, bd] = this.brazos;
     if (gesto === 'espalda') {        // manos atrás, como en la apertura de Sad Monarch
       bi.rotation.set(0.45, 0, -0.18); bi.userData.codo.rotation.set(0.3, 0, 1.2);
       bd.rotation.set(0.45, 0, 0.18); bd.userData.codo.rotation.set(0.3, 0, -1.2);
     } else {
-      bi.rotation.set(-0.1 - hablar * 0.3 * (0.5 + 0.5 * Math.sin(t * 3)) * (1 - abrazar) - abrazar * 0.25, 0, -0.1 - abrazar * 0.75); bi.userData.codo.rotation.set(-0.3 - hablar * 0.5 * (1 - abrazar) - abrazar * 0.05, 0, abrazar * 0.45);
-      bd.rotation.set(lerp(-0.1, -2.7, senalar), 0, lerp(0.1, 0.2, senalar)); bd.userData.codo.rotation.set(lerp(-0.25, -0.2, senalar), 0, 0);
+      bi.rotation.set(-0.1 - hablar * 0.3 * (0.5 + 0.5 * Math.sin(t * 3)) * (1 - abrazar) - abrazar * 0.35, 0, -0.1 - abrazar * 0.62); bi.userData.codo.rotation.set(-0.3 - hablar * 0.5 * (1 - abrazar) - abrazar * 0.1, 0, abrazar * 0.75);
+      bd.rotation.set(lerp(-0.1, -2.7, senalar) + Math.sin(fase) * 0.3 * caminar, 0, lerp(0.1, 0.2, senalar)); bd.userData.codo.rotation.set(lerp(-0.25, -0.2, senalar), 0, 0);
     }
     this.cara.material.uniforms.abrir.value = hablar * 0.045;
   }
@@ -430,9 +443,9 @@ window.vista = (nombre, t = 1.0) => {
   ubicar(nombre); renderer.render(scene, camera);
   ctx.drawImage(glCanvas, 0, 0);
 };
-// ───────────── episodio: todo sale de timeline.json (voces, tiempos y envolventes) ─────────────
-let TL = null, M = {}, LIN = {};
-const serie = (claves, t) => {              // interpolación lineal de claves [[t, v], ...]
+// ───────────── episodio: todo sale de timeline.json (voces, tiempos, caminatas y envolventes) ─────────────
+let TL = null, M = {}, LIN = {}, CAMINA = {};
+const serie = (claves, t) => {              // interpolación suave entre claves [[t, v], ...]
   if (t <= claves[0][0]) return claves[0][1];
   for (let i = 1; i < claves.length; i++) {
     const [t1, v1] = claves[i];
@@ -449,85 +462,143 @@ function habla(quien, t) {                  // envolvente de la voz activa de es
   }
   return 0;
 }
-function linea(t) {                           // subtítulo visible: desde el inicio de la línea hasta la siguiente
+function linea(t) {                           // subtítulo visible: desde el inicio de la línea hasta poco después
   let s = null;
   for (const l of TL.lineas) if (t >= l.start - 0.05 && t < l.end + 0.45) s = l;
   return s;
 }
+const suelo = (x, z) => 0.9 * Math.sqrt(Math.max(0, 1 - (x * x + z * z) / 196));
+// ── recorridos: tramos [t0, t1, desde, hasta, curva]; entre tramos el personaje se queda quieto ──
+const facil = { suave: easeInOut, arranca: (u) => (u < 0.35 ? (u * u) / 0.7 : u - 0.175) / 0.825 };
+let RUTA = {};
+function armarRutas() {
+  const [a0, a1] = CAMINA.uno, [b0, b1] = CAMINA.dos, [c0, c1] = CAMINA.tres;
+  RUTA.lucia = [
+    [a0, a1, [-0.95, -2.3], [-0.42, 0.6], 'suave'],            // llega sola, llorando, cuesta arriba
+    [b0, b1, [-0.42, 0.6], [-0.3, 2.55], 'suave'],             // caminan juntos
+    [c0, c1 + 0.5, [-0.3, 2.55], [-0.24, 5.9], 'arranca'],     // se van hacia el sol
+  ];
+  RUTA.jesus = [
+    [M.L14 - 0.1, M.L14 + 1.1, [0.45, 0.35], [0.3, 0.42], 'suave'],   // se acerca para abrazarla
+    [b0, b1, [0.3, 0.42], [0.25, 2.45], 'suave'],
+    [c0, c1 + 0.5, [0.25, 2.45], [0.3, 5.8], 'arranca'],
+  ];
+}
+function recorrido(ruta, t) {
+  let p = ruta[0][2], dist = 0;
+  for (const [t0, t1, a, b, f] of ruta) {
+    const largo = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (t < t0) break;
+    const e = facil[f](clamp((t - t0) / (t1 - t0)));
+    p = [lerp(a[0], b[0], e), lerp(a[1], b[1], e)]; dist += largo * e;
+    if (t < t1) break;
+  }
+  return { x: p[0], z: p[1], dist };
+}
+function mover(obj, ruta, t, giroQuieto, zancada, bajar = 0) {
+  const r = recorrido(ruta, t), r2 = recorrido(ruta, t + 1 / 30);
+  const dx = r2.x - r.x, dz = r2.z - r.z, v = Math.hypot(dx, dz) * 30;
+  const caminar = smooth(0.03, 0.22, v);
+  const rumbo = v > 0.01 ? Math.atan2(dx, dz) : 0;
+  obj.g.position.set(r.x, suelo(r.x, r.z) - bajar, r.z);
+  obj.g.rotation.y = lerp(giroQuieto, rumbo, caminar);
+  return { caminar, fase: (r.dist / zancada) * Math.PI };
+}
+// ── cámara ──
 const orbita = (centro, ang, d, alto, mira = 0) => [[centro[0] + Math.sin(ang) * d, centro[1] + alto, centro[2] + Math.cos(ang) * d], [centro[0], centro[1] + mira, centro[2]]];
-const CL = () => [lucia.g.position.x, 1.9, lucia.g.position.z], CJ = () => [jesus.g.position.x, 2.35, jesus.g.position.z];
-// cámaras: cada una devuelve [posición, mira, fov] según u ∈ [0,1] del plano (acercamiento sutil de ~8%)
+const CL = () => [lucia.g.position.x, lucia.g.position.y + 1.02, lucia.g.position.z];
+const CJ = () => [jesus.g.position.x, jesus.g.position.y + 1.45, jesus.g.position.z];
+const BEBE = () => [lucia.g.position.x + 0.07, lucia.g.position.y + 0.68, lucia.g.position.z + 0.22];
+const vertigo = (d0, f0, d) => (2 * Math.atan((d0 * Math.tan((f0 * Math.PI) / 360)) / d) * 180) / Math.PI;
+// cada cámara devuelve [posición, mira, fov, pulso]; u ∈ [0,1] dentro del plano; pulso = cámara en mano sutil
 const CAM = {
-  espaldas: (u) => { const d = lerp(1, 0.93, u); return [[0.15 * d, lerp(2.15, 2.1, u), -4.9 * d + 0.45], [0, 1.72, 3.0], 38]; },
-  lucia: (u) => [...orbita(CL(), 0.38, lerp(3.0, 2.75, u), 0.08, 0.0), 30],
-  lucia_cerca: (u) => [...orbita(CL(), 0.34, lerp(2.45, 2.2, u), 0.1, 0.02), 30],
-  bebe: (u) => [[lerp(-0.08, -0.12, u), 2.2, lerp(2.6, 2.4, u)], [-0.36, 1.84, 0.7], 30],
-  jesus: (u) => [...orbita(CJ(), -0.32, lerp(2.35, 2.15, u), 0.05, 0.0), 30],
-  jesus_camara: (u) => [...orbita(CJ(), -0.32, lerp(2.3, 1.8, easeInOut(u)), 0.05, 0.02), 30],
-  dos: (u) => [[lerp(0.05, 0.02, u), 2.0, lerp(5.8, 5.3, u)], [0.0, 1.75, 0.45], 36],
-  orbita: (u) => { const a = easeInOut(u) * Math.PI * 2; return [...orbita([0.0, 1.72, 0.47], a, 4.4, 0.35, 0.0), 38]; },
+  llega: (u) => { const c = CL(); return [[c[0] + 0.35, 2.02, c[2] + lerp(4.3, 3.6, u)], [c[0] + 0.05, c[1] - 0.3, c[2]], 34, 1]; },
+  espaldas: (u) => { const d = lerp(1, 0.93, u); return [[0.15 * d, lerp(2.15, 2.1, u), -4.9 * d + 0.45], [0, 1.72, 3.0], 38, 0.4]; },
+  lucia: (u) => [...orbita(CL(), lerp(0.42, 0.34, u), lerp(3.0, 2.75, u), 0.08), 30, 1],
+  lucia_cerca: (u) => [...orbita(CL(), lerp(0.28, 0.38, u), lerp(2.45, 2.2, u), 0.1, 0.02), 30, 1],
+  lucia_lado: (u) => [...orbita(CL(), lerp(0.66, 0.58, u), lerp(2.6, 2.3, u), 0.06, 0.02), 30, 1],   // desde el lado de Jesús
+  vertigo: (u) => { const d = lerp(2.9, 1.7, easeInOut(u)); return [...orbita(CL(), 0.34, d, 0.1, 0.02), vertigo(2.9, 30, d), 0.3]; },
+  lucia_tilt: (u) => { const c = CL(), b = BEBE(), e = easeInOut(clamp(u * 1.4 - 0.1)); return [orbita(c, 0.3, 2.3, 0.1)[0], lerp3(c, b, e), 30, 1]; },
+  bebe: (u) => { const b = BEBE(); return [[b[0] + lerp(0.3, 0.26, u), b[1] + 0.66, b[2] + lerp(1.9, 1.7, u)], [b[0] - 0.06, b[1] + 0.3, b[2] - 0.1], 30, 0.7]; },
+  bebe_grua: (u) => { const b = BEBE(), c = CL(), e = easeInOut(u); return [[b[0] + 0.28, lerp(b[1] + 0.4, c[1] + 0.12, e), b[2] + lerp(1.55, 2.0, e)], lerp3([b[0] - 0.04, b[1] + 0.05, b[2]], [c[0], c[1] - 0.05, c[2]], e), 30, 0.6]; },
+  jesus: (u) => [...orbita(CJ(), lerp(-0.26, -0.36, u), lerp(2.35, 2.15, u), 0.05), 30, 1],
+  jesus_bajo: (u) => [...orbita(CJ(), lerp(-0.2, -0.28, u), lerp(2.05, 1.85, u), -0.38, 0.08), 32, 0.8],
+  jesus_camara: (u) => [...orbita(CJ(), -0.32, lerp(2.3, 1.75, easeInOut(u)), 0.05, 0.02), 30, 0.5],
+  dos: (u) => [[lerp(0.05, 0.02, u), 2.0, lerp(5.8, 5.3, u)], [0.0, 1.75, 0.45], 36, 0.5],
+  orbita: (u) => { const a = easeInOut(u) * Math.PI * 2; return [...orbita([0.0, 1.72, 0.47], a, 4.4, 0.35), 38, 0]; },
+  juntos_frente: (u) => { const z = (lucia.g.position.z + jesus.g.position.z) / 2; return [[-0.05, 2.0, z + lerp(4.4, 3.6, u)], [-0.03, 1.7, z], 34, 0.8]; },
+  juntos_lado: (u) => { const z = (lucia.g.position.z + jesus.g.position.z) / 2; return [[lerp(-2.7, -2.4, u), 2.05, z + lerp(3.3, 3.0, u)], [-0.05, 1.68, z], 32, 0.8]; },
+  despedida: (u) => { const z = (lucia.g.position.z + jesus.g.position.z) / 2, e = easeInOut(u); return [[0.1, lerp(2.1, 3.3, e), z - lerp(4.3, 5.2, e)], [0.0, lerp(1.75, 2.3, e), z + 3], lerp(38, 42, e), 0.2]; },
 };
 let PLANOS = [];
 function armarPlanos() {
   const c = (id, d = 0.12) => M[id] - d;   // corte un poco antes de que empiece a hablar
+  const fin = (id) => LIN[id].end;
   PLANOS = [
-    { t0: 0, cam: 'espaldas' },                          // L01 "Jesús…" / L02 "¿Sí, hija?"
+    { t0: 0, cam: 'llega' },                             // llega sola: "Jesús…"
+    { t0: c('L02', 0.3), cam: 'espaldas' },              // "¿Sí, hija?"
     { t0: c('L03'), cam: 'lucia_cerca' },                // ¿Por qué se fue?
     { t0: c('L04'), cam: 'jesus' },                      // ¿Qué es lo que más te duele?
     { t0: c('L05'), cam: 'lucia' },                      // Que me dejó sola…
     { t0: c('L06'), cam: 'bebe' },                       // que Mateo no lo va a conocer…
-    { t0: c('L07'), cam: 'lucia_cerca' },                // y que a lo mejor… fue mi culpa.
-    { t0: c('L08', 0.5), cam: 'dos' },                   // Hija mía… mírame.
-    { t0: c('L09', 0.2), cam: 'orbita', t1: M.L09 + 3.6 }, // Él decidió irse. Tú decidiste quedarte. (360°)
+    { t0: c('L07'), cam: 'vertigo' },                    // y que a lo mejor… fue mi culpa. (dolly zoom)
+    { t0: c('L07b'), cam: 'lucia_lado' },               // Tal vez si hubiera sido más bonita…
+    { t0: c('L08', 0.45), cam: 'dos' },                  // Hija mía… mírame.
+    { t0: c('L09', 0.2), cam: 'orbita', t1: M.L09 + 3.6 }, // Él decidió irse… (360°)
     { t0: c('L10'), cam: 'jesus' },                      // Eso no habla de lo que te falta…
-    { t0: c('L11'), cam: 'lucia' },                      // Pero no sé si puedo sola…
-    { t0: c('L12'), cam: 'jesus' },                      // ¿Puede una madre olvidarse…?
+    { t0: c('L10b'), cam: 'lucia_tilt' },                // Mira a Mateo. (baja la mirada al bebé)
+    { t0: c('L10c'), cam: 'bebe_grua' },                 // Te he visto cada madrugada… (sube del bebé a su cara)
+    { t0: c('L11'), cam: 'lucia_cerca' },                // Pero no sé si puedo sola…
+    { t0: c('L12'), cam: 'jesus_bajo' },                 // ¿Puede una madre olvidarse…?
     { t0: c('L13', 0.3), cam: 'bebe' },                  // No…
-    { t0: c('L14'), cam: 'dos' },                        // …yo nunca me olvidaré de ti.
+    { t0: c('L14'), cam: 'dos' },                        // …yo nunca me olvidaré de ti. (abrazo)
+    { t0: fin('L14') + 0.5, cam: 'juntos_frente' },      // caminan juntos: ¿Y si un día me canso?
+    { t0: c('L14c'), cam: 'juntos_lado' },               // Entonces yo te cargo a ti…
     { t0: c('L15', 0.35), cam: 'jesus_camara' },         // No estás sola. Yo me quedo. (a cámara)
-    { t0: c('L16', 0.45), cam: 'espaldas' },             // Gracias, Jesús. → loop
+    { t0: c('L16', 0.45), cam: 'despedida' },            // Gracias, Jesús. → se van hacia el sol
   ];
   PLANOS.forEach((p, i) => { p.t1 = p.t1 ?? (PLANOS[i + 1]?.t0 ?? TL.duracion); });
   for (let i = 1; i < PLANOS.length; i++) PLANOS[i].t0 = Math.max(PLANOS[i].t0, PLANOS[i - 1].t1 ?? 0);
 }
 function estado(t) {
-  const fin = TL.duracion;
-  // intensidad del llanto: sube con la regla de tres, se calma con las palabras de Jesús
-  const llorar = serie([[0, 0.45], [M.L03, 1], [M.L05, 0.85], [M.L07, 1], [M.L08 + 0.5, 0.8], [M.L10, 0.55], [M.L11, 0.7], [M.L12, 0.55], [M.L14 + 1, 0.35], [M.L16, 0.2], [fin, 0.15]], t);
-  // Lucía: mira hacia Jesús; baja la cabeza al bebé cuando lo nombra; levanta la mirada en "mírame"
-  const aJesus = serie([[0, 0], [M.L01 - 0.3, 0.45], [M.L02 + 0.6, 0.25], [M.L03, 0.2]], t);
-  const alBebe = serie([[M.L06 - 0.4, 0], [M.L06, 1], [M.L07 - 0.1, 0.3], [M.L08, 0.5], [M.L08 + 0.8, 0], [M.L12 + 1.2, 0], [M.L13 - 0.2, 1], [M.L13 + 1.0, 0.8], [M.L14, 0]], t);
-  const secarse = Math.max(serie([[M.L10 + 1.5, 0], [M.L10 + 2.2, 1], [M.L11 - 0.2, 1], [M.L11 + 0.3, 0]], t), 0);
-  const abrazo = serie([[M.L14 - 0.4, 0], [M.L14 + 1.0, 1], [M.L15 - 0.3, 0.2], [M.L16 - 0.5, 1], [fin, 1]], t);
+  const final = TL.duracion, fin = (id) => LIN[id].end;
+  // llanto: sube con la herida, se calma con las palabras de Jesús, y al final casi desaparece
+  const llorar = serie([[0, 0.8], [M.L03, 1], [M.L05, 0.85], [M.L07, 1], [M.L08 + 0.5, 0.8], [M.L10, 0.55], [M.L10c, 0.45], [M.L11, 0.7], [M.L12, 0.55], [M.L14 + 1, 0.35], [M.L14c, 0.25], [M.L16, 0.12], [final, 0.08]], t);
+  const sonrisa = serie([[fin('L14c') - 1, 0], [M.L15 + 1, 0.55], [M.L16, 0.8], [final, 0.9]], t);
+  const aJesus = serie([[0, 0], [CAMINA.uno[1] - 0.3, 0], [M.L02, 0.35], [M.L02 + 0.8, 0.2], [M.L03, 0.2], [CAMINA.dos[0], 0.2], [CAMINA.dos[0] + 1, 0.05], [M.L14b + 0.3, 0.35], [M.L14c + 0.8, 0.45], [M.L15, 0.4], [M.L16 + 1.5, 0.3]], t);
+  const alBebe = serie([[0, 0.5], [CAMINA.uno[1] - 0.6, 0.5], [CAMINA.uno[1], 0], [M.L06 - 0.4, 0], [M.L06, 1], [M.L07 - 0.1, 0.3], [M.L08, 0.5], [M.L08 + 0.8, 0], [M.L10b, 0], [M.L10b + 0.6, 1], [fin('L10c') - 0.6, 1], [M.L11, 0], [M.L12 + 1.2, 0], [M.L13 - 0.2, 1], [M.L13 + 1.0, 0.8], [M.L14, 0]], t);
+  const secarse = serie([[fin('L10c'), 0], [fin('L10c') + 0.5, 1], [M.L11 - 0.1, 1], [M.L11 + 0.4, 0]], t);
+  const abrazo = serie([[M.L14 - 0.4, 0], [M.L14 + 1.2, 1]], t);
   const aCamara = serie([[M.L15 - 0.5, 0], [M.L15, 1], [M.L16 - 0.6, 1], [M.L16 - 0.2, 0]], t);
-  const giraJ = serie([[0, 0], [M.L02 - 0.4, -0.35], [M.L02 + 0.8, -0.1], [M.L03, -0.2]], t);
-  return {
-    lucia: { llorar, hablar: habla('lucia', t), girar: 0.2 + aJesus - alBebe * 0.25, cabeceo: 0.08 + alBebe * 0.28 - (1 - llorar) * 0.04, secarse },
-    jesus: { hablar: habla('jesus', t), girar: lerp(giraJ, 0.02, aCamara), cabeceo: 0.06 * (1 - aCamara), abrazar: abrazo },
-    abrazo,
-  };
+  const giraJ = serie([[0, 0], [M.L02 - 0.4, -0.35], [M.L02 + 0.8, -0.1], [M.L03, -0.2], [CAMINA.dos[0], -0.2], [CAMINA.dos[0] + 1, 0], [M.L14c, -0.35], [fin('L14c'), -0.3]], t);
+  const quietoL = serie([[CAMINA.dos[0] - 0.2, 0.3], [CAMINA.dos[0], 0.05]], t);
+  const quietoJ = serie([[CAMINA.dos[0] - 0.2, -0.3], [CAMINA.dos[0], -0.05]], t);
+  return { llorar, sonrisa, aJesus, alBebe, secarse, abrazo, aCamara, giraJ, quietoL, quietoJ };
 }
 window.cuadro = (t) => {
   const p = PLANOS.find((d) => t >= d.t0 && t < d.t1) || PLANOS[PLANOS.length - 1];
   const e = estado(t);
-  const espalda = p.cam === 'espaldas';
   luciaE.g.visible = false;                                          // la variante embarazada es para otros episodios
-  // de espaldas los dos miran el atardecer (como la apertura del dinosaurio); luego se voltean a verse
-  lucia.g.rotation.y = espalda ? 0.25 : 0.3;
-  jesus.g.rotation.y = espalda ? -0.25 : -0.3;
-  jesus.g.position.x = lerp(POS.jesus[0], 0.3, e.abrazo);          // se acerca para abrazarla
-  lucia.pose({ t, ...e.lucia });
-  jesus.pose({ t, ...e.jesus, gesto: espalda && e.abrazo < 0.5 ? 'espalda' : 'reposo' });
-  const [pos, mira, fov] = CAM[p.cam](clamp((t - p.t0) / (p.t1 - p.t0)));
-  camera.position.set(...pos); camera.lookAt(...mira); camera.fov = fov; camera.updateProjectionMatrix();
+  const mL = mover(lucia, RUTA.lucia, t, e.quietoL, 0.26, 0.02);
+  const mJ = mover(jesus, RUTA.jesus, t, e.quietoJ, 0.34);
+  const girarCam = -0.32 - jesus.g.rotation.y;                       // para mirar directo a la cámara del plano final
+  lucia.pose({ t, llorar: e.llorar, hablar: habla('lucia', t), girar: e.aJesus - e.alBebe * 0.25, cabeceo: 0.08 + e.alBebe * 0.28 - (1 - e.llorar) * 0.05, secarse: e.secarse, caminar: mL.caminar, fase: mL.fase, sonrisa: e.sonrisa });
+  const espalda = p.cam === 'espaldas' && e.abrazo < 0.5;
+  jesus.pose({ t, hablar: habla('jesus', t), girar: lerp(e.giraJ, girarCam, e.aCamara), cabeceo: 0.06 * (1 - e.aCamara), abrazar: e.abrazo, gesto: espalda ? 'espalda' : 'reposo', caminar: mJ.caminar, fase: mJ.fase });
+  const u = clamp((t - p.t0) / (p.t1 - p.t0));
+  const [pos, mira, fov, pulso] = CAM[p.cam](u);
+  // cámara en mano muy sutil (respiración del operador), más notoria en los primeros planos
+  const k = pulso * 0.012;
+  camera.position.set(pos[0] + k * (Math.sin(t * 1.3) + 0.5 * Math.sin(t * 3.1)), pos[1] + k * (Math.sin(t * 1.7 + 1) + 0.4 * Math.sin(t * 2.3)), pos[2]);
+  camera.lookAt(...mira); camera.fov = fov; camera.updateProjectionMatrix();
   renderer.render(scene, camera);
   ctx.drawImage(glCanvas, 0, 0);
-  // subtítulo pixel (blanco con contorno negro), en dos renglones si no cabe
+  // subtítulo pixel (blanco con contorno negro), en varios renglones si no cabe
   const l = linea(t);
   if (l) {
     const tam = 78 * S; ctx.font = `${tam}px ${FUENTE}`;
-    const palabras = l.sub.split(' '), renglones = [''];
-    for (const w of palabras) {
+    const renglones = [''];
+    for (const w of l.sub.split(' ')) {
       const prueba = (renglones[renglones.length - 1] + ' ' + w).trim();
       if (ctx.measureText(prueba).width > W * 0.8 && renglones[renglones.length - 1]) renglones.push(w); else renglones[renglones.length - 1] = prueba;
     }
@@ -547,6 +618,8 @@ async function preparar() {
   jesus = new Jesus(tex); en(jesus.g, ...POS.jesus); scene.add(jesus.g);
   TL = await (await fetch('/timeline.json')).json();
   for (const l of TL.lineas) { M[l.id] = l.start; LIN[l.id] = l; }
+  CAMINA = { uno: TL.marcas.camina1, dos: TL.marcas.camina2, tres: TL.marcas.camina3 };
+  armarRutas();
   armarPlanos();
   window.duracion = TL.duracion;
   window.cuadro(0);
