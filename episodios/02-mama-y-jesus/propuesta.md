@@ -1,7 +1,7 @@
 # "Lucía y Jesús": propuesta de serie (formato Sad Monarch → mamás)
 
 ## 1. Por qué funciona
-Sad Monarch (778K seguidores con 18 posts) usa esta fórmula: **un personaje vulnerable y tierno le cuenta su dolor a Jesús, y Jesús le responde con calma, una metáfora visual y un versículo.** Cambiamos al dinosaurio por **una mamá**, y el espectador ya no se proyecta en un personaje simbólico: se ve a sí misma.
+Sad Monarch (778K seguidores con 18 posts) usa esta fórmula: **un personaje vulnerable y tierno le cuenta su dolor a Jesús, y Jesús le responde con calma, con una pregunta y con la Palabra dicha en voz alta.** Solo la conversación: sin tarjetas ni versículos en pantalla. Cambiamos al dinosaurio por **una mamá**, y el espectador ya no se proyecta en un personaje simbólico: se ve a sí misma.
 
 - **Público**: mamás hispanas (embarazadas, primerizas, solteras o cansadas), el público más activo en compartir contenido de fe en Facebook, Instagram y TikTok.
 - **Motor de compartidos**: "Mándaselo a una mamá que necesite oír esto."
@@ -23,13 +23,15 @@ Sad Monarch (778K seguidores con 18 posts) usa esta fórmula: **un personaje vul
 | 2–7 s | **La pregunta con llanto** ("¿Por qué…?"): el hook | "¿Por qué se fue?" |
 | 7–10 s | Jesús **pregunta** en vez de sermonear | "¿Qué es lo que más te duele?" |
 | 10–18 s | **Regla de 3 que escala**: la tercera es la herida más honda | "Que me dejó sola… que Mateo no lo va a conocer… y que a lo mejor fue mi culpa." |
-| 18–24 s | **Quiebre**: Jesús no dice "todo va a estar bien", sino que **reencuadra** | "Él se fue. Tú te quedaste. Eso dice quién eres tú." |
-| 24–32 s | **Inserto de metáfora visual** sobre color plano (como los pájaros de Sad Monarch) + versículo | Isaías 49:15: la madre que no olvida a su hijo, y Dios que no la olvida a ella |
-| 32–36 s | **Jesús mira a cámara** (rompe la cuarta pared): la promesa | "Y yo no me voy a ir." |
-| 36–40 s | **Loop**: el mismo plano de espaldas del inicio | "Gracias, Jesús." (el bebé balbucea) |
+| 17–27 s | **Quiebre** con órbita de 360°: Jesús no dice "todo va a estar bien", sino que **reencuadra** | "Él decidió irse. Tú decidiste quedarte. Eso no habla de lo que te falta. Habla de quién eres." |
+| 27–38 s | **La Palabra dicha en la conversación** (sin inserto ni texto en pantalla), en forma de pregunta | "¿Puede una madre olvidarse del niño que carga en brazos?" / "No…" / "…yo nunca me olvidaré de ti." (Isaías 49:15) |
+| 38–41 s | **Jesús mira a cámara** (rompe la cuarta pared): la promesa | "No estás sola. Yo me quedo." |
+| 41–46 s | **Loop**: el mismo plano de espaldas del inicio, ahora con el brazo de Jesús en su hombro | "Gracias, Jesús." |
 
 ## 4. Banco de temas (12)
-| # | Tema | Variante | Hook con llanto | Reencuadre de Jesús | Metáfora visual | Versículo |
+La columna "Metáfora" es la imagen que Jesús **dice** con palabras; en pantalla solo aparece la conversación.
+
+| # | Tema | Variante | Hook con llanto | Reencuadre de Jesús | Metáfora (hablada) | Versículo (parafraseado en el diálogo) |
 |---|---|---|---|---|---|---|
 | 1 | **Abandono de la pareja** ⭐ | Bebé en brazos | "¿Por qué se fue?" | "Él se fue. Tú te quedaste." | Madre que abraza a su bebé → mano grande que la abraza a ella | Isaías 49:15 |
 | 2 | **Agotada a las 3 a.m.** ⭐ | Bebé en brazos | "¿Por qué no puedo más?" | "No tienes que poder sola." | Luna → amanecer: "nuevas son cada mañana" | Lamentaciones 3:22-23 · Isaías 40:11 |
@@ -47,11 +49,11 @@ Sad Monarch (778K seguidores con 18 posts) usa esta fórmula: **un personaje vul
 ⭐ = orden de lanzamiento recomendado (1 → 5).
 
 ## 5. Reglas de cuidado (obligatorias)
-- **Nunca "aguanta".** En peleas y abandono, Jesús consuela sin decirle que se quede en una situación dañina. Si un tema toca violencia, el cierre incluye una tarjeta: *"Si estás en peligro, busca ayuda: línea de emergencia de tu país."*
+- **Nunca "aguanta".** En peleas y abandono, Jesús consuela sin decirle que se quede en una situación dañina. Si un tema toca violencia, Jesús lo dice **dentro de la conversación** ("Si estás en peligro, busca ayuda hoy"). Nada de tarjetas.
 - **Posparto, pérdida o bebé enfermo**: Jesús consuela y la invita a no cargarlo sola ("habla con alguien, pide ayuda"). No se promete sanidad ni resultados médicos.
-- **Versículos citados con referencia** y en una versión consistente, en frases cortas.
+- **Versículos parafraseados en la voz de Jesús**, en frases cortas. La referencia va en la descripción del post, no en pantalla.
 - **El bebé nunca sufre en pantalla.** Duerme, balbucea o sonríe.
 
 ## 6. Producción
 - **Costos**: la cara de Jesús se genera **una sola vez** (212 créditos) y se reutiliza en todos los episodios. Las voces son de ElevenLabs, unos 500–700 créditos por episodio si se generan una sola vez. Todo lo demás (animación, música, efectos, lágrimas, bebé) se hace con código.
-- **Estilo Sad Monarch**: cielo en degradado liso amarillo-naranja con el sol como disco, pasto de cubos, un árbol solitario, subtítulos pixel con contorno, cortes cada ~4 s, inserto de color plano para la metáfora y loop al plano inicial.
+- **Estilo Sad Monarch**: cielo en degradado liso amarillo-naranja con el sol como disco, pasto de cubos, un árbol solitario, subtítulos pixel con contorno, corte en cada cambio de hablante, órbita de 360° en el quiebre y loop al plano inicial. Sin insertos ni tarjetas.

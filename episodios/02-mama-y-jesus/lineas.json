@@ -1,0 +1,18 @@
+[
+  {"id": "L01", "who": "lucia", "tts": "[sniffles] Jesús…", "sub": "Jesús…"},
+  {"id": "L02", "who": "jesus", "tts": "¿Sí, hija?", "sub": "¿Sí, hija?"},
+  {"id": "L03", "who": "lucia", "tts": "[crying] ¿Por qué se fue?", "sub": "¿Por qué se fue?"},
+  {"id": "L04", "who": "jesus", "tts": "[gently] ¿Qué es lo que más te duele?", "sub": "¿Qué es lo que más te duele?"},
+  {"id": "L05", "who": "lucia", "tts": "[crying] Que me dejó sola…", "sub": "Que me dejó sola…"},
+  {"id": "L06", "who": "lucia", "tts": "[crying] que Mateo no lo va a conocer…", "sub": "que Mateo no lo va a conocer…"},
+  {"id": "L07", "who": "lucia", "tts": "[sobbing] y que a lo mejor… fue mi culpa.", "sub": "y que a lo mejor… fue mi culpa."},
+  {"id": "L08", "who": "jesus", "tts": "[softly] Hija mía… mírame.", "sub": "Hija mía… mírame."},
+  {"id": "L09", "who": "jesus", "tts": "Él decidió irse. Tú decidiste quedarte.", "sub": "Él decidió irse. Tú decidiste quedarte."},
+  {"id": "L10", "who": "jesus", "tts": "Eso no habla de lo que te falta. Habla de quién eres.", "sub": "Eso no habla de lo que te falta. Habla de quién eres."},
+  {"id": "L11", "who": "lucia", "tts": "[crying softly] Pero no sé si puedo sola…", "sub": "Pero no sé si puedo sola…"},
+  {"id": "L12", "who": "jesus", "tts": "¿Puede una madre olvidarse del niño que carga en brazos?", "sub": "¿Puede una madre olvidarse del niño que carga en brazos?"},
+  {"id": "L13", "who": "lucia", "tts": "[whispers] No…", "sub": "No…"},
+  {"id": "L14", "who": "jesus", "tts": "Pues aunque ella lo olvidara… yo nunca me olvidaré de ti.", "sub": "Pues aunque ella lo olvidara… yo nunca me olvidaré de ti."},
+  {"id": "L15", "who": "jesus", "tts": "[warmly] No estás sola. Yo me quedo.", "sub": "No estás sola. Yo me quedo."},
+  {"id": "L16", "who": "lucia", "tts": "[sniffles] Gracias, Jesús.", "sub": "Gracias, Jesús."}
+]

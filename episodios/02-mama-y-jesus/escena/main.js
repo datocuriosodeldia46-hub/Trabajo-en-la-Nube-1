@@ -1,6 +1,6 @@
 // Ep02 · "Lucía y Jesús" — personajes y mundo al estilo Sad Monarch (Three.js, determinista).
 //   window.vista(nombre, t) → encuadres de la hoja de personajes
-//   window.cuadro(t)        → clip de demostración (usa demo.json si no hay timeline)
+//   window.cuadro(t)        → cuadro del episodio en el segundo t (timeline.json)
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
@@ -153,6 +153,121 @@ class Bebe {
   pose(t) { this.g.scale.setScalar(1 + Math.sin(t * 2.6) * 0.012); this.cara.rotation.z = Math.sin(t * 0.9) * 0.08; }
 }
 
+// ───────────── cara pixel art de Lucía (se redibuja cada cuadro: parpadeo, boca, lágrimas) ─────────────
+class CaraPixel {
+  constructor(N = 96) {
+    this.N = N;
+    this.c = document.createElement('canvas'); this.c.width = this.c.height = N;
+    this.g = this.c.getContext('2d');
+    this.tex = new THREE.CanvasTexture(this.c);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.tex.magFilter = THREE.NearestFilter; this.tex.minFilter = THREE.NearestFilter; this.tex.generateMipmaps = false;
+  }
+  p(x, y, color) { this.g.fillStyle = color; this.g.fillRect(Math.round(x), Math.round(y), 1, 1); }
+  elipse(cx, cy, rx, ry, color, filtro) {
+    for (let y = Math.floor(cy - ry); y <= Math.ceil(cy + ry); y++)
+      for (let x = Math.floor(cx - rx); x <= Math.ceil(cx + rx); x++) {
+        const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+        if (d <= 1 && (!filtro || filtro(x, y, d))) this.p(x, y, typeof color === 'function' ? color(x, y, d) : color);
+      }
+  }
+  linea(x0, y0, x1, y1, color, grosor = 1) {
+    const pasos = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2;
+    for (let i = 0; i <= pasos; i++) {
+      const x = lerp(x0, x1, i / pasos), y = lerp(y0, y1, i / pasos);
+      for (let k = 0; k < grosor; k++) this.p(x, y + k, color);
+    }
+  }
+  ojo(cx, cy, lado, cierre, llorar, t) {
+    const rx = 11, ry = 12;
+    if (cierre > 0.93) {                               // ojo cerrado: curva ∪ con pestañas
+      for (let x = -rx; x <= rx; x++) {
+        const y = cy + 3 + Math.round(3 * (1 - (x / rx) ** 2));
+        this.p(cx + x, y, '#2a1712'); this.p(cx + x, y + 1, '#2a1712');
+      }
+      this.linea(cx + rx * lado, cy + 4, cx + (rx + 3) * lado, cy + 2, '#2a1712', 2);
+      return;
+    }
+    const ix = cx + lado * 1, iy = cy + 2;
+    const tapa = (x) => cy - ry + 2 * ry * cierre + (x - cx) * lado * 0.24;    // párpado caído hacia afuera (tristeza)
+    this.elipse(cx, cy, rx, ry, (x, y) => {
+      if (y < tapa(x)) return y > tapa(x) - 3 ? '#b9819b' : '#d7a2b7';        // párpado malva (como Felix)
+      const di = ((x - ix) / 8) ** 2 + ((y - iy) / 9) ** 2;
+      if (di <= 1) {
+        const dp = ((x - ix) / 4) ** 2 + ((y - iy) / 5) ** 2;
+        if (dp <= 1) return '#0e0806';
+        if (di > 0.78) return '#24140c';
+        return y < iy - 2 ? '#3a2416' : y < iy + 3 ? '#6a4226' : '#a2703e';
+      }
+      return y > cy + ry - 3 ? '#e8e4dc' : '#fdfcf8';
+    });
+    // contorno inferior suave y línea de pestañas gruesa sobre el párpado
+    this.elipse(cx, cy, rx + 0.6, ry + 0.6, '#7a4c3e', (x, y, d) => d > 0.84 && y > tapa(x) + 1 && y > cy);
+    for (let x = cx - rx - 1; x <= cx + rx + 1; x++) {
+      const y = tapa(x);
+      if (((x - cx) / (rx + 1)) ** 2 < 1) { this.p(x, y, '#241410'); this.p(x, y + 1, '#241410'); }
+    }
+    const ex = cx + (rx + 1) * lado, ey = tapa(ex);
+    this.linea(ex, ey, ex + 3 * lado, ey - 2, '#241410', 2);               // rabito de pestaña (esquina exterior)
+    this.linea(ex - 3 * lado, ey - 1, ex + 1 * lado, ey - 4, '#241410', 1);
+    // brillos
+    const b1y = iy - 4, b2y = iy + 3;
+    if (b1y > tapa(ix - 3) + 1) this.elipse(ix - 3, b1y, 1.6, 1.6, '#ffffff');
+    if (b2y > tapa(ix + 3)) this.elipse(ix + 3, b2y, 0.9, 0.9, '#ffffff');
+    // ojos llorosos: agua en la línea inferior
+    if (llorar > 0.25) {
+      this.elipse(cx, cy, rx, ry, (x) => ((x + Math.floor(t * 6)) % 5 === 0 ? '#ffffff' : '#bfe7ff'), (x, y, d) => d > 0.62 && y > cy + ry * 0.55);
+    }
+  }
+  dibujar({ cierre = 0.45, apertura = 0, llorar = 0, t = 0 }) {
+    const g = this.g, N = this.N;
+    g.clearRect(0, 0, N, N);
+    // rubor con tramado (pixel art)
+    g.globalAlpha = 0.8;
+    for (const cx of [20, 76]) this.elipse(cx, 67, 8, 4.2, '#f39aa1', (x, y, d) => d < 0.35 || (x + y) % 2 === 0);
+    g.globalAlpha = 1;
+    for (const [x, y] of [[39, 63], [42, 65], [54, 65], [57, 63], [36, 65], [60, 65]]) this.p(x, y, '#d69a7e');   // pecas
+    // cejas tristes: el extremo interior sube
+    const sube = Math.round(llorar * 2);
+    this.linea(20, 36, 39, 31 - sube, '#3a2320', 2);
+    this.linea(76, 36, 57, 31 - sube, '#3a2320', 2);
+    this.linea(22, 35, 37, 31 - sube, '#5a3a30', 1);
+    this.linea(74, 35, 59, 31 - sube, '#5a3a30', 1);
+    this.ojo(30, 51, -1, cierre, llorar, t);
+    this.ojo(66, 51, 1, cierre, llorar, t);
+    // nariz
+    this.p(46, 66, '#c98a70'); this.p(50, 66, '#c98a70'); this.p(47, 65, '#e0a88d'); this.p(48, 65, '#e0a88d'); this.p(49, 65, '#e0a88d'); this.p(48, 62, '#fde8da');
+    // boca
+    const cx = 48, cy = 77;
+    if (apertura < 0.15) {
+      for (let x = -7; x <= 7; x++) {
+        const y = cy - Math.round(2.2 * (1 - (x / 7) ** 2));    // puchero: comisuras hacia abajo
+        this.p(cx + x, y, '#7d2f3a'); this.p(cx + x, y + 1, '#c7646d');
+      }
+    } else {
+      const rx = 5 + apertura * 2.2, ry = 1.6 + apertura * 4.6;
+      this.elipse(cx, cy, rx + 1, ry + 1, '#8e3b45', (x, y) => y >= cy - ry * 0.6 - 1);
+      this.elipse(cx, cy, rx, ry, (x, y) => (y > cy + ry * 0.45 ? '#c25560' : '#3d0f14'), (x, y) => y >= cy - ry * 0.6);
+      if (apertura > 0.5) for (let x = -3; x <= 3; x++) this.p(cx + x, Math.ceil(cy - ry * 0.6), '#f4efe8');
+    }
+    // lágrimas que corren por las mejillas
+    if (llorar > 0.05) {
+      g.globalAlpha = clamp(llorar * 1.2);
+      for (const [x0, lado, fase] of [[21, -1, 0], [75, 1, 11]]) {
+        const largo = Math.min(30, 8 + ((t * 20 + fase) % 36));
+        for (let k = 0; k < largo; k++) {
+          const x = x0 + lado * Math.round(k * 0.12), y = 60 + k;
+          this.p(x, y, '#9fd6ff'); this.p(x + 1, y, k % 3 ? '#9fd6ff' : '#e6f7ff');
+        }
+        const gy = 60 + ((t * 26 + fase * 2) % 30), gx = x0 + lado * Math.round((gy - 60) * 0.12);
+        this.elipse(gx + 0.5, gy, 1.8, 2.4, '#8fcffb'); this.p(gx, gy - 1, '#ffffff');
+      }
+      g.globalAlpha = 1;
+    }
+    this.tex.needsUpdate = true;
+  }
+}
+
 // ───────────── Lucía (proxy tierno, estilo Felix) ─────────────
 class Lucia {
   constructor(variante = 'bebe') {
@@ -186,41 +301,23 @@ class Lucia {
     const craneo = esfera(0.25, '', { material: piel }); craneo.scale.set(1, 0.96, 0.95); this.cabeza.add(craneo);
     for (const l of [-1, 1]) { const o = esfera(0.045, '', { material: piel }); o.position.set(0.245 * l, -0.01, -0.01); this.cabeza.add(o); }
     // pelo: casquete, flequillo, mechones y chongo despeinado (mamá cansada)
-    const casco = malla(new THREE.SphereGeometry(0.265, 36, 20, 0, Math.PI * 2, 0, Math.PI * 0.56), pelo); casco.position.set(0, 0.02, -0.02); casco.rotation.x = -0.22; this.cabeza.add(casco);
+    const casco = malla(new THREE.SphereGeometry(0.265, 36, 20, 0, Math.PI * 2, 0, Math.PI * 0.56), pelo); casco.position.set(0, 0.035, -0.04); casco.rotation.x = -0.16; this.cabeza.add(casco);
     const nuca = esfera(0.255, '', { material: pelo }); nuca.position.set(0, 0.0, -0.06); nuca.scale.set(1.02, 1, 0.9); this.cabeza.add(nuca);
-    for (const [x, y, z, sx, rz] of [[-0.12, 0.17, 0.16, 1.4, 0.5], [0.02, 0.2, 0.18, 1.6, -0.1], [0.14, 0.16, 0.15, 1.3, -0.6]]) {
+    for (const [x, y, z, sx, rz] of [[-0.14, 0.215, 0.11, 1.2, 0.6], [0.03, 0.245, 0.11, 1.4, -0.1], [0.16, 0.205, 0.1, 1.1, -0.7]]) {
       const f = esfera(0.075, '', { material: pelo }); f.position.set(x, y, z); f.scale.set(sx, 0.55, 0.7); f.rotation.z = rz; this.cabeza.add(f);
     }
     for (const l of [-1, 1]) { const m = capsula(0.04, 0.14, '', { material: pelo }); m.position.set(0.215 * l, -0.06, 0.03); m.scale.set(1, 1, 0.6); m.rotation.z = 0.12 * l; this.cabeza.add(m); }
     const chongo = esfera(0.105, '', { material: pelo }); chongo.position.set(0.03, 0.29, -0.07); this.cabeza.add(chongo);
     const liga = malla(new THREE.TorusGeometry(0.07, 0.016, 8, 20), mat('#f08fb0')); liga.position.set(0.03, 0.235, -0.07); liga.rotation.x = Math.PI / 2 - 0.3; this.cabeza.add(liga);
-    // ojos grandes con párpados caídos (el sello "sad" de Felix)
-    this.ojos = [-1, 1].map((l) => {
-      const o = new THREE.Group(); o.position.set(0.088 * l, 0.0, 0.205);
-      const blanco = esfera(0.056, '#ffffff', { rough: 0.25, sombra: false }); blanco.scale.set(1, 1.08, 0.55); o.add(blanco);
-      const iris = esfera(0.036, '#5b3a26', { rough: 0.3, sombra: false }); iris.position.set(0.004 * -l, -0.006, 0.022); iris.scale.set(1, 1.1, 0.5); o.add(iris);
-      const pupila = esfera(0.02, '#140c08', { rough: 0.2, sombra: false }); pupila.position.set(0.004 * -l, -0.006, 0.034); pupila.scale.z = 0.5; o.add(pupila);
-      const brillo = esfera(0.009, '#ffffff', { material: new THREE.MeshBasicMaterial({ color: '#ffffff' }), sombra: false }); brillo.position.set(0.012 * -l, 0.012, 0.041); o.add(brillo);
-      const lagrimal = malla(new THREE.TorusGeometry(0.046, 0.0045, 6, 20, Math.PI), mat('#d8f1ff', { rough: 0.05, transparent: true, opacity: 0.85 }), false);
-      lagrimal.rotation.z = Math.PI; lagrimal.position.set(0, -0.012, 0.022); lagrimal.scale.set(1, 0.9, 1); o.add(lagrimal);
-      const tapa = malla(new THREE.SphereGeometry(0.058, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), parpado, false);
-      tapa.scale.set(1.0, 1.05, 0.58); o.add(tapa);
-      o.userData = { tapa, lado: l, lagrimal };
-      this.cabeza.add(o); return o;
-    });
-    this.cejas = [-1, 1].map((l) => { const c = capsula(0.011, 0.06, '#3a2320'); c.rotation.z = Math.PI / 2; c.position.set(0.09 * l, 0.1, 0.226); this.cabeza.add(c); c.userData.lado = l; return c; });
-    const nariz = esfera(0.016, '', { material: piel }); nariz.position.set(0, -0.045, 0.238); this.cabeza.add(nariz);
-    for (const l of [-1, 1]) { const r = malla(new THREE.CircleGeometry(0.04, 20), mat('#f39aa2', { transparent: true, opacity: 0.45 }), false); r.position.set(0.14 * l, -0.06, 0.2); r.rotation.y = 0.55 * l; this.cabeza.add(r); }
-    this.boca = new THREE.Group(); this.boca.position.set(0, -0.105, 0.228); this.cabeza.add(this.boca);
-    this.labio = malla(new THREE.TorusGeometry(0.026, 0.0048, 8, 20, Math.PI * 0.8), mat('#b0555f'), false);
-    this.labio.rotation.z = Math.PI * 0.1; this.boca.add(this.labio);
-    this.hueco = malla(new THREE.CircleGeometry(0.028, 20), mat('#5a1b22'), false); this.hueco.scale.y = 0.05; this.hueco.position.y = -0.008; this.boca.add(this.hueco);
-    // lágrimas (se deslizan por las mejillas)
-    this.lagrimas = [];
-    for (const l of [-1, 1]) for (let k = 0; k < 2; k++) {
-      const gota = esfera(0.014, '', { material: mat('#a8dcff', { rough: 0.05, transparent: true, opacity: 0.9 }), sombra: false });
-      gota.scale.set(0.8, 1.2, 0.6); gota.userData = { lado: l, fase: k * 0.5 + (l > 0 ? 0.25 : 0) }; this.cabeza.add(gota); this.lagrimas.push(gota);
-    }
+    // cara pixel art pegada a la curva de la cabeza
+    this.caraPixel = new CaraPixel(96);
+    const R = 0.2535, geo = new THREE.PlaneGeometry(0.44, 0.44, 32, 32), pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i); pos.setZ(i, Math.sqrt(Math.max(0, R * R - x * x - y * y))); }
+    geo.computeVertexNormals();
+    const caraMat = new THREE.MeshStandardMaterial({ map: this.caraPixel.tex, transparent: true, depthWrite: false, roughness: 0.6, alphaTest: 0.01 });
+    const cara = new THREE.Mesh(geo, caraMat); cara.renderOrder = 3;
+    const soporte = new THREE.Group(); soporte.scale.set(1, 0.96, 0.95); soporte.position.y = -0.005; soporte.add(cara); this.cabeza.add(soporte);
+    const nariz = esfera(0.011, '', { material: piel, sombra: false }); nariz.position.set(0, -0.058, 0.233); this.cabeza.add(nariz);
     if (variante === 'bebe') { this.bebe = new Bebe(); this.bebe.g.position.set(0.02, 0.66, 0.2); this.bebe.g.rotation.set(0, -0.1, 0.32); this.cuerpo.add(this.bebe.g); }
   }
   pose({ t = 0, llorar = 0, hablar = 0, girar = 0, cabeceo = 0, sollozo = 0, secarse = 0 }) {
@@ -229,27 +326,9 @@ class Lucia {
     this.cuerpo.position.y = respiro * 0.004 + hipo * 0.006;
     this.cuerpo.scale.set(1, 1 + respiro * 0.01, 1);
     this.cabeza.rotation.set(cabeceo + 0.1 * llorar + hablar * Math.sin(t * 8) * 0.05, girar + Math.sin(t * 0.6) * 0.04, Math.sin(t * 0.8) * 0.05 + hablar * Math.sin(t * 4) * 0.04);
-    // párpados: muy caídos (tristeza) + parpadeo
-    const parpadeo = ((t + 0.7) % 3.3) < 0.12 ? 1 : 0;
-    for (const o of this.ojos) {
-      const caida = 0.55 + llorar * 0.25;
-      o.userData.tapa.rotation.x = lerp(-0.2, 1.35, clamp(caida * 0.75 + parpadeo));
-      o.userData.tapa.rotation.z = 0.28 * o.userData.lado * (0.5 + llorar);
-      o.userData.lagrimal.material.opacity = smooth(0.3, 0.8, llorar) * 0.8;
-    }
-    for (const c of this.cejas) { c.rotation.z = Math.PI / 2 + (0.35 + llorar * 0.25) * c.userData.lado; c.position.y = 0.1 + llorar * 0.012; }
-    // boca: triste; se abre con la voz
-    this.labio.rotation.z = Math.PI * 0.1;
-    this.labio.scale.set(1, lerp(1, 1.3, llorar), 1);
-    this.hueco.scale.y = 0.05 + hablar * 0.9 + hipo * 0.3;
-    // lágrimas
-    for (const g of this.lagrimas) {
-      const u = ((t * 0.55 + g.userData.fase) % 1);
-      const vis = llorar > 0.05 ? 1 : 0;
-      g.visible = vis > 0;
-      g.position.set(0.1 * g.userData.lado + 0.012 * g.userData.lado * u, -0.04 - u * 0.17, 0.21 - u * 0.02);
-      g.scale.setScalar(vis * (0.9 + u * 0.4)); g.material.opacity = 0.9 * (1 - smooth(0.8, 1, u)) * llorar;
-    }
+    // cara: párpados caídos por la tristeza, parpadeo, boca con la voz, sollozos y lágrimas
+    const parpadeo = ((t + 0.7) % 3.3) < 0.12;
+    this.caraPixel.dibujar({ cierre: parpadeo ? 1 : 0.4 + llorar * 0.14, apertura: clamp(hablar + hipo * 0.35), llorar, t });
     // brazos
     const [bi, bd] = this.brazos;
     if (this.variante === 'bebe') {
@@ -302,7 +381,7 @@ class Jesus {
       bi.rotation.set(0.45, 0, -0.18); bi.userData.codo.rotation.set(0.3, 0, 1.2);
       bd.rotation.set(0.45, 0, 0.18); bd.userData.codo.rotation.set(0.3, 0, -1.2);
     } else {
-      bi.rotation.set(-0.1 - hablar * 0.3 * (0.5 + 0.5 * Math.sin(t * 3)), 0, -0.1 - abrazar * 0.9); bi.userData.codo.rotation.set(-0.3 - hablar * 0.5 - abrazar * 0.6, 0, 0);
+      bi.rotation.set(-0.1 - hablar * 0.3 * (0.5 + 0.5 * Math.sin(t * 3)) * (1 - abrazar) - abrazar * 0.25, 0, -0.1 - abrazar * 0.75); bi.userData.codo.rotation.set(-0.3 - hablar * 0.5 * (1 - abrazar) - abrazar * 0.05, 0, abrazar * 0.45);
       bd.rotation.set(lerp(-0.1, -2.7, senalar), 0, lerp(0.1, 0.2, senalar)); bd.userData.codo.rotation.set(lerp(-0.25, -0.2, senalar), 0, 0);
     }
     this.cara.material.uniforms.abrir.value = hablar * 0.045;
@@ -343,6 +422,7 @@ function animar(t, estado) {
   jesus.pose({ t, ...estado.jesus });
 }
 window.vista = (nombre, t = 1.0) => {
+  luciaE.g.visible = true;
   const espalda = nombre === 'dos_espaldas';
   // para la hoja: Lucía mira al frente, llorando; Jesús en reposo (o de espaldas con manos atrás)
   lucia.g.rotation.y = espalda ? 0.25 : 0; jesus.g.rotation.y = espalda ? -0.25 : -0.15;
@@ -350,25 +430,110 @@ window.vista = (nombre, t = 1.0) => {
   ubicar(nombre); renderer.render(scene, camera);
   ctx.drawImage(glCanvas, 0, 0);
 };
-// Clip de demostración (sin voz): apertura de espaldas → Lucía llorando → Jesús responde
-const DEMO = [
-  { t0: 0, t1: 2.6, vista: 'dos_espaldas', sub: [[0.2, 'Jesús…'], [1.3, '¿Sí, hija?']], lucia: { llorar: 0.5 }, jesus: { gesto: 'espalda' }, giro: 0.25 },
-  { t0: 2.6, t1: 6.0, vista: 'lucia_llanto', sub: [[2.7, '¿Por qué se fue?']], lucia: { llorar: 1, hablar: 0.6 }, jesus: {} },
-  { t0: 6.0, t1: 9.0, vista: 'jesus_primer_plano', sub: [[6.1, '¿Qué es lo que'], [7.3, 'más te duele?']], lucia: { llorar: 0.8 }, jesus: { hablar: 0.7 } },
-];
+// ───────────── episodio: todo sale de timeline.json (voces, tiempos y envolventes) ─────────────
+let TL = null, M = {}, LIN = {};
+const serie = (claves, t) => {              // interpolación lineal de claves [[t, v], ...]
+  if (t <= claves[0][0]) return claves[0][1];
+  for (let i = 1; i < claves.length; i++) {
+    const [t1, v1] = claves[i];
+    if (t <= t1) { const [t0, v0] = claves[i - 1]; return lerp(v0, v1, smooth(t0, t1, t)); }
+  }
+  return claves[claves.length - 1][1];
+};
+function habla(quien, t) {                  // envolvente de la voz activa de ese personaje (boca)
+  for (const l of TL.lineas) {
+    if (l.who !== quien || t < l.start - 0.05 || t > l.end + 0.05) continue;
+    const f = (t - l.start) * TL.fps, i = Math.floor(f);
+    const a = l.env[clamp(i, 0, l.env.length - 1)] ?? 0, b = l.env[clamp(i + 1, 0, l.env.length - 1)] ?? 0;
+    return clamp(lerp(a, b, f - i) * 1.05);
+  }
+  return 0;
+}
+function linea(t) {                           // subtítulo visible: desde el inicio de la línea hasta la siguiente
+  let s = null;
+  for (const l of TL.lineas) if (t >= l.start - 0.05 && t < l.end + 0.45) s = l;
+  return s;
+}
+const orbita = (centro, ang, d, alto, mira = 0) => [[centro[0] + Math.sin(ang) * d, centro[1] + alto, centro[2] + Math.cos(ang) * d], [centro[0], centro[1] + mira, centro[2]]];
+const CL = () => [lucia.g.position.x, 1.9, lucia.g.position.z], CJ = () => [jesus.g.position.x, 2.35, jesus.g.position.z];
+// cámaras: cada una devuelve [posición, mira, fov] según u ∈ [0,1] del plano (acercamiento sutil de ~8%)
+const CAM = {
+  espaldas: (u) => { const d = lerp(1, 0.93, u); return [[0.15 * d, lerp(2.15, 2.1, u), -4.9 * d + 0.45], [0, 1.72, 3.0], 38]; },
+  lucia: (u) => [...orbita(CL(), 0.38, lerp(3.0, 2.75, u), 0.08, 0.0), 30],
+  lucia_cerca: (u) => [...orbita(CL(), 0.34, lerp(2.45, 2.2, u), 0.1, 0.02), 30],
+  bebe: (u) => [[lerp(-0.08, -0.12, u), 2.2, lerp(2.6, 2.4, u)], [-0.36, 1.84, 0.7], 30],
+  jesus: (u) => [...orbita(CJ(), -0.32, lerp(2.35, 2.15, u), 0.05, 0.0), 30],
+  jesus_camara: (u) => [...orbita(CJ(), -0.32, lerp(2.3, 1.8, easeInOut(u)), 0.05, 0.02), 30],
+  dos: (u) => [[lerp(0.05, 0.02, u), 2.0, lerp(5.8, 5.3, u)], [0.0, 1.75, 0.45], 36],
+  orbita: (u) => { const a = easeInOut(u) * Math.PI * 2; return [...orbita([0.0, 1.72, 0.47], a, 4.4, 0.35, 0.0), 38]; },
+};
+let PLANOS = [];
+function armarPlanos() {
+  const c = (id, d = 0.12) => M[id] - d;   // corte un poco antes de que empiece a hablar
+  PLANOS = [
+    { t0: 0, cam: 'espaldas' },                          // L01 "Jesús…" / L02 "¿Sí, hija?"
+    { t0: c('L03'), cam: 'lucia_cerca' },                // ¿Por qué se fue?
+    { t0: c('L04'), cam: 'jesus' },                      // ¿Qué es lo que más te duele?
+    { t0: c('L05'), cam: 'lucia' },                      // Que me dejó sola…
+    { t0: c('L06'), cam: 'bebe' },                       // que Mateo no lo va a conocer…
+    { t0: c('L07'), cam: 'lucia_cerca' },                // y que a lo mejor… fue mi culpa.
+    { t0: c('L08', 0.5), cam: 'dos' },                   // Hija mía… mírame.
+    { t0: c('L09', 0.2), cam: 'orbita', t1: M.L09 + 3.6 }, // Él decidió irse. Tú decidiste quedarte. (360°)
+    { t0: c('L10'), cam: 'jesus' },                      // Eso no habla de lo que te falta…
+    { t0: c('L11'), cam: 'lucia' },                      // Pero no sé si puedo sola…
+    { t0: c('L12'), cam: 'jesus' },                      // ¿Puede una madre olvidarse…?
+    { t0: c('L13', 0.3), cam: 'bebe' },                  // No…
+    { t0: c('L14'), cam: 'dos' },                        // …yo nunca me olvidaré de ti.
+    { t0: c('L15', 0.35), cam: 'jesus_camara' },         // No estás sola. Yo me quedo. (a cámara)
+    { t0: c('L16', 0.45), cam: 'espaldas' },             // Gracias, Jesús. → loop
+  ];
+  PLANOS.forEach((p, i) => { p.t1 = p.t1 ?? (PLANOS[i + 1]?.t0 ?? TL.duracion); });
+  for (let i = 1; i < PLANOS.length; i++) PLANOS[i].t0 = Math.max(PLANOS[i].t0, PLANOS[i - 1].t1 ?? 0);
+}
+function estado(t) {
+  const fin = TL.duracion;
+  // intensidad del llanto: sube con la regla de tres, se calma con las palabras de Jesús
+  const llorar = serie([[0, 0.45], [M.L03, 1], [M.L05, 0.85], [M.L07, 1], [M.L08 + 0.5, 0.8], [M.L10, 0.55], [M.L11, 0.7], [M.L12, 0.55], [M.L14 + 1, 0.35], [M.L16, 0.2], [fin, 0.15]], t);
+  // Lucía: mira hacia Jesús; baja la cabeza al bebé cuando lo nombra; levanta la mirada en "mírame"
+  const aJesus = serie([[0, 0], [M.L01 - 0.3, 0.45], [M.L02 + 0.6, 0.25], [M.L03, 0.2]], t);
+  const alBebe = serie([[M.L06 - 0.4, 0], [M.L06, 1], [M.L07 - 0.1, 0.3], [M.L08, 0.5], [M.L08 + 0.8, 0], [M.L12 + 1.2, 0], [M.L13 - 0.2, 1], [M.L13 + 1.0, 0.8], [M.L14, 0]], t);
+  const secarse = Math.max(serie([[M.L10 + 1.5, 0], [M.L10 + 2.2, 1], [M.L11 - 0.2, 1], [M.L11 + 0.3, 0]], t), 0);
+  const abrazo = serie([[M.L14 - 0.4, 0], [M.L14 + 1.0, 1], [M.L15 - 0.3, 0.2], [M.L16 - 0.5, 1], [fin, 1]], t);
+  const aCamara = serie([[M.L15 - 0.5, 0], [M.L15, 1], [M.L16 - 0.6, 1], [M.L16 - 0.2, 0]], t);
+  const giraJ = serie([[0, 0], [M.L02 - 0.4, -0.35], [M.L02 + 0.8, -0.1], [M.L03, -0.2]], t);
+  return {
+    lucia: { llorar, hablar: habla('lucia', t), girar: 0.2 + aJesus - alBebe * 0.25, cabeceo: 0.08 + alBebe * 0.28 - (1 - llorar) * 0.04, secarse },
+    jesus: { hablar: habla('jesus', t), girar: lerp(giraJ, 0.02, aCamara), cabeceo: 0.06 * (1 - aCamara), abrazar: abrazo },
+    abrazo,
+  };
+}
 window.cuadro = (t) => {
-  const p = DEMO.find((d) => t >= d.t0 && t < d.t1) || DEMO[DEMO.length - 1];
-  lucia.g.rotation.y = p.giro ?? 0; jesus.g.rotation.y = -(p.giro ?? 0.15);
-  const hablaL = p.lucia.hablar ? p.lucia.hablar * (0.5 + 0.5 * Math.sin(t * 17)) : 0;
-  const hablaJ = p.jesus.hablar ? p.jesus.hablar * (0.5 + 0.5 * Math.sin(t * 13)) : 0;
-  animar(t, { lucia: { ...p.lucia, hablar: hablaL }, jesus: { ...p.jesus, hablar: hablaJ } });
-  const [pos, mira, fov] = VISTAS[p.vista];
-  const u = clamp((t - p.t0) / (p.t1 - p.t0));
-  camera.position.set(...lerp3(pos, lerp3(pos, mira, 0.06), u)); camera.lookAt(...mira); camera.fov = fov; camera.updateProjectionMatrix();
+  const p = PLANOS.find((d) => t >= d.t0 && t < d.t1) || PLANOS[PLANOS.length - 1];
+  const e = estado(t);
+  const espalda = p.cam === 'espaldas';
+  luciaE.g.visible = false;                                          // la variante embarazada es para otros episodios
+  // de espaldas los dos miran el atardecer (como la apertura del dinosaurio); luego se voltean a verse
+  lucia.g.rotation.y = espalda ? 0.25 : 0.3;
+  jesus.g.rotation.y = espalda ? -0.25 : -0.3;
+  jesus.g.position.x = lerp(POS.jesus[0], 0.3, e.abrazo);          // se acerca para abrazarla
+  lucia.pose({ t, ...e.lucia });
+  jesus.pose({ t, ...e.jesus, gesto: espalda && e.abrazo < 0.5 ? 'espalda' : 'reposo' });
+  const [pos, mira, fov] = CAM[p.cam](clamp((t - p.t0) / (p.t1 - p.t0)));
+  camera.position.set(...pos); camera.lookAt(...mira); camera.fov = fov; camera.updateProjectionMatrix();
   renderer.render(scene, camera);
   ctx.drawImage(glCanvas, 0, 0);
-  let sub = null; for (const [ts, s] of p.sub) if (t >= ts) sub = s;
-  if (sub) texto(sub, W / 2, H * 0.62, 88 * S);
+  // subtítulo pixel (blanco con contorno negro), en dos renglones si no cabe
+  const l = linea(t);
+  if (l) {
+    const tam = 78 * S; ctx.font = `${tam}px ${FUENTE}`;
+    const palabras = l.sub.split(' '), renglones = [''];
+    for (const w of palabras) {
+      const prueba = (renglones[renglones.length - 1] + ' ' + w).trim();
+      if (ctx.measureText(prueba).width > W * 0.8 && renglones[renglones.length - 1]) renglones.push(w); else renglones[renglones.length - 1] = prueba;
+    }
+    const y0 = H * 0.66 - (renglones.length - 1) * tam * 0.6;
+    renglones.forEach((r, i) => texto(r, W / 2, y0 + i * tam * 1.2, tam));
+  }
 };
 
 async function preparar() {
@@ -380,7 +545,10 @@ async function preparar() {
   lucia = new Lucia('bebe'); en(lucia.g, ...POS.lucia); scene.add(lucia.g);
   luciaE = new Lucia('embarazada'); en(luciaE.g, 2.4, 0.88, 0.6); scene.add(luciaE.g);
   jesus = new Jesus(tex); en(jesus.g, ...POS.jesus); scene.add(jesus.g);
-  window.duracion = 9.0;
+  TL = await (await fetch('/timeline.json')).json();
+  for (const l of TL.lineas) { M[l.id] = l.start; LIN[l.id] = l; }
+  armarPlanos();
+  window.duracion = TL.duracion;
   window.cuadro(0);
   window.listo = true;
 }
