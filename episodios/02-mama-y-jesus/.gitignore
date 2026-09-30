@@ -1,0 +1,5 @@
+node_modules
+render/stills/
+render/log.txt
+render/*.mp4
+__pycache__/
