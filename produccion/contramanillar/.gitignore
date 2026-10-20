@@ -1,0 +1,5 @@
+node_modules/
+out/
+public/mezcla.wav
+audio/mezcla_cruda.wav
+audio/__pycache__/
