@@ -254,15 +254,16 @@ export const DeLargo = ({t}: {t: number}) => {
   const ideal = useMemo(() => curva.filter((p, i) => i % 2 === 0), [curva]);
   return (
     <>
-      <Camara pos={[9, 23, -25]} mira={[-5, 0, -3]} fov={46} />
-      <Mundo a={{x: 0, z: 0}}>
+      {/* vista trasera elevada que sigue a la moto: la curva (a la derecha) queda a la derecha de la pantalla */}
+      <Camara pos={[1.2, 8.5, -8.5]} mira={[-1.6, 0, 6]} fov={46} />
+      <Mundo a={e}>
         <Carretera pts={curva} ancho={5} />
         <Estela pts={ideal} y={0.05} grosor={0.06} />
         <Estela pts={rastro} color={ROJO} y={0.06} grosor={0.09} />
         <MotoEn e={e} />
         <Etiqueta p={local(e, 0, 2, 0)} texto="JALAS HACIA LA CURVA" color={ROJO} vis={tramo(t, 2.75, 3.0) - tramo(t, 4.3, 4.5)} alto={60} tam={34} />
         <Etiqueta p={local(e, 0, 2, 0)} texto="SE SIGUE DE LARGO" color={ROJO} vis={tramo(t, 4.5, 4.75)} alto={60} tam={40} />
-        <Etiqueta p={[-10, 0.2, 10]} texto="LA CURVA" vis={tramo(t, 0.6, 0.9) - tramo(t, 2.6, 2.8)} alto={50} tam={26} />
+        <Etiqueta p={[-4, 0.2, 6]} texto="LA CURVA" vis={tramo(t, 0.6, 0.9) - tramo(t, 2.6, 2.8)} alto={50} tam={26} />
       </Mundo>
     </>
   );
