@@ -2,18 +2,81 @@ import * as THREE from 'three';
 import {useMemo} from 'react';
 import {Html} from '@react-three/drei';
 import {useThree} from '@react-three/fiber';
+import {useCurrentFrame} from 'remotion';
+import {RoomEnvironment} from 'three/examples/jsm/environments/RoomEnvironment.js';
+import {Bloom, ChromaticAberration, EffectComposer, Noise, Vignette} from '@react-three/postprocessing';
+import EVENTOS from './eventos.json';
 import {Moto, ORO, ROJO} from './Moto';
 import {cinta, Estado} from './util';
 
 const FONDO = '#0b1324';
 
-// Cámara puesta por frame (determinista)
+// Acercamiento brusco: sube rápido (≈3 frames) y regresa suave
+export const golpe = (s: number) => EVENTOS.golpes.reduce((acc, [t, f]) => {
+  const d = s - t;
+  if (d < -0.02 || d > 1.2) return acc;
+  const sube = Math.min(1, (d + 0.02) / 0.1);
+  return acc + f * 0.16 * sube * Math.exp(-Math.max(0, d - 0.1) * 3.2);
+}, 0);
+const temblor = (s: number) => EVENTOS.golpes.reduce((acc, [t, f]) => {
+  const d = s - t;
+  return d < 0 || d > 0.45 ? acc : acc + f * 0.035 * Math.exp(-d * 9);
+}, 0);
+
+// Cámara puesta por frame (determinista), con golpes de zoom y temblor sincronizados con el sonido
 export const Camara = ({pos, mira, fov = 40}: {pos: [number, number, number]; mira: [number, number, number]; fov?: number}) => {
   const camera = useThree((s) => s.camera) as THREE.PerspectiveCamera;
-  camera.position.set(...pos);
+  const s = useCurrentFrame() / 30;
+  const k = temblor(s);
+  camera.position.set(pos[0] + Math.sin(s * 71) * k, pos[1] + Math.sin(s * 53 + 1) * k, pos[2] + Math.sin(s * 61 + 2) * k);
   camera.lookAt(...mira);
-  if (camera.fov !== fov) { camera.fov = fov; camera.updateProjectionMatrix(); }
+  const f = fov / (1 + golpe(s));
+  if (camera.fov !== f) { camera.fov = f; camera.updateProjectionMatrix(); }
   return null;
+};
+
+// Reflejos realistas sin descargar nada: entorno de estudio generado por código
+export const Entorno = () => {
+  const {gl, scene} = useThree();
+  useMemo(() => {
+    const pm = new THREE.PMREMGenerator(gl);
+    scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    scene.environmentIntensity = 0.45;
+  }, [gl, scene]);
+  return null;
+};
+
+// Brillo (bloom), viñeta, grano y aberración cromática en los golpes
+export const Efectos = ({s}: {s: number}) => (
+  <EffectComposer multisampling={4}>
+    <Bloom mipmapBlur intensity={0.9} luminanceThreshold={0.85} luminanceSmoothing={0.2} radius={0.7} />
+    <ChromaticAberration offset={new THREE.Vector2(0.0025 * golpe(s) * 6, 0.0012 * golpe(s) * 6)} radialModulation={false} modulationOffset={0} />
+    <Noise opacity={0.05} />
+    <Vignette eskil={false} offset={0.25} darkness={0.75} />
+  </EffectComposer>
+);
+
+// Líneas de velocidad alrededor de la moto (en coordenadas de la moto)
+export const Rafagas = ({e, n = 40, fuerza = 1}: {e: Estado; n?: number; fuerza?: number}) => {
+  const lineas = useMemo(() => Array.from({length: n}, (_, i) => {
+    const r = (k: number) => Math.abs(Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1;
+    const lado = r(1) < 0.5 ? -1 : 1;
+    return {x: lado * (1.2 + r(2) * 3.5), y: 0.15 + r(3) * 2.6, z0: r(4) * 40, largo: 0.8 + r(5) * 1.8};
+  }), [n]);
+  if (fuerza <= 0) return null;
+  return (
+    <group position={[e.x, 0, e.z]} rotation={[0, e.h, 0]}>
+      {lineas.map((l, i) => {
+        const z = 25 - ((l.z0 + e.dist * 1.6) % 40);
+        return (
+          <mesh key={i} position={[l.x, l.y, z]}>
+            <boxGeometry args={[0.012, 0.012, l.largo * fuerza]} />
+            <meshBasicMaterial color="#cfe0ff" transparent opacity={0.35 * fuerza} toneMapped={false} />
+          </mesh>
+        );
+      })}
+    </group>
+  );
 };
 
 export const Luces = () => (

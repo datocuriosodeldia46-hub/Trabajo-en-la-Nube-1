@@ -1,7 +1,8 @@
 import {useMemo} from 'react';
 import {ORO, ROJO} from './Moto';
-import {Camara, Carretera, Estela, Etiqueta, Flecha, Huella, MotoEn, Suelo} from './Escenario';
-import {Estado, estadoEn, lerp, local, remuestrear, simular, tramo} from './util';
+import {Camara, Carretera, Estela, Etiqueta, Flecha, Huella, MotoEn, Rafagas, Suelo} from './Escenario';
+import {Easing} from 'remotion';
+import {clamp01, Estado, estadoEn, lerp, local, remuestrear, simular, tramo} from './util';
 
 // Línea de tiempo (segundos de la narración)
 export const ESCENAS = [
@@ -30,26 +31,47 @@ const camSigue = (e: Estado, lx: number, ly: number, lz: number, mz = 3, my = 1)
 };
 const usarCamino = (sim: Estado[]) => useMemo(() => remuestrear(sim.map((e) => ({x: e.x, z: e.z})), 1, 60), [sim]);
 
-// 1. Gancho: empujas a la izquierda… y la moto se va a la derecha
+// 1. Gancho en 4 planos: macro del puño → empujas → la llanta va a la izquierda → la moto se va a la derecha
 export const Gancho = ({t}: {t: number}) => {
   const sim = useMemo(() => simular(7, (u) => ({
     v: 11,
-    dir: 0.24 * (tramo(u, 2.5, 2.9) - tramo(u, 3.3, 3.9)),
-    lean: 0.58 * tramo(u, 3.0, 4.3),
+    dir: 0.22 * (tramo(u, 2.6, 3.2) - tramo(u, 4.3, 4.9)),
+    lean: 0.58 * tramo(u, 4.0, 5.1),
   }), 0, -20), []);
   const camino = usarCamino(sim);
   const e = estadoEn(sim, t);
-  const c = camSigue(e, -2.4, 3.4, -6.2, 4, 0.9);
-  const puno = local(e, -0.4, 1.45, 0.55);
+  const puno = local(e, -0.37, 1.15, 0.36);
+  const sinInc = {...e, lean: 0};
+  let cam: {pos: [number, number, number]; mira: [number, number, number]; fov: number};
+  if (t < 3.88) {
+    // A-B: macro del puño derecho, empuje lento hacia él
+    const k = tramo(t, 0, 3.88);
+    cam = {pos: rel(e, local(sinInc, lerp(-0.95, -0.7, k), lerp(1.75, 1.6, k), lerp(-0.25, -0.05, k))), mira: rel(e, local(sinInc, -0.3, 1.08, 0.5)), fov: 44};
+  } else if (t < 4.75) {
+    // C: plano bajo desde el lado izquierdo hacia la llanta delantera (se ve cómo apunta a la izquierda)
+    const k = tramo(t, 3.88, 4.4);
+    cam = {pos: rel(e, local(sinInc, lerp(1.9, 1.55, k), 0.62, lerp(-1.3, -0.9, k))), mira: rel(e, local(sinInc, 0.15, 0.4, 0.95)), fov: 44};
+  } else {
+    // D: el dron se aleja y sube de golpe para revelar la moto inclinada en la curva
+    const k = Easing.out(Easing.cubic)(clamp01((t - 4.75) / 0.9));
+    cam = {pos: rel(e, local(sinInc, lerp(-1.8, -5.5, k), lerp(1.6, 7.5, k), lerp(-3.5, -9, k))), mira: rel(e, local(sinInc, 0, 0.6, 3)), fov: 44};
+  }
+  const estela = sim.slice(0, Math.round(t * 30) + 1).filter((_, i) => i % 2 === 0).map((s2) => ({x: s2.x, z: s2.z}));
   return (
     <>
-      <Camara pos={c.pos} mira={c.mira} fov={42 - 4 * tramo(t, 0, 6.7)} />
+      <Camara pos={cam.pos} mira={cam.mira} fov={cam.fov} />
       <Mundo a={e}>
         <Carretera pts={camino} />
+        <Rafagas e={e} fuerza={t < 3.88 ? 1 : 0.6} />
         <MotoEn e={e} />
-        <Flecha de={puno} dir={[Math.sin(e.h), 0, Math.cos(e.h)]} largo={0.9 * (tramo(t, 2.4, 2.7) - tramo(t, 3.9, 4.2))} />
-        <Etiqueta p={puno} texto="EMPUJAS ESTE PUÑO" vis={tramo(t, 2.5, 2.8) - tramo(t, 4.3, 4.5)} alto={110} />
-        <Etiqueta p={local(e, 0, 2.1, 0)} texto="… Y SE VA A LA DERECHA" vis={tramo(t, 4.4, 4.7)} alto={70} />
+        {t > 4.6 && <Estela pts={estela.slice(-40)} y={0.04} grosor={0.06} />}
+        <Etiqueta p={local(e, -1.4, 1.3, 2.2)} texto="QUIERES IR → DERECHA" vis={tramo(t, 1.4, 1.6) - tramo(t, 2.45, 2.55)} alto={40} tam={32} />
+        <Flecha de={puno} dir={[Math.sin(e.h), 0.25, Math.cos(e.h)]} largo={0.4 * (tramo(t, 2.55, 2.75) - tramo(t, 3.8, 3.88))} grosor={0.012} />
+        <Etiqueta p={local(e, -0.37, 1.24, 0.42)} texto="EMPUJAS" vis={tramo(t, 2.6, 2.75) - tramo(t, 3.8, 3.88)} alto={60} tam={40} />
+        <Huella p={local(sinInc, 0, 0, 0.72)} vis={tramo(t, 3.9, 4.1)} />
+        <Flecha de={local(sinInc, -0.05, 0.05, 1.15)} dir={[Math.cos(e.h), 0, -Math.sin(e.h)]} largo={0.7 * (tramo(t, 3.92, 4.1) - tramo(t, 4.65, 4.75))} grosor={0.03} />
+        <Etiqueta p={local(sinInc, 0.1, 0.55, 1.25)} texto="← IZQUIERDA" vis={tramo(t, 3.9, 4.05) - tramo(t, 4.65, 4.75)} alto={50} tam={46} />
+        <Etiqueta p={local(e, 0, 2.1, 0)} texto="… Y SE VA A LA DERECHA" vis={tramo(t, 5.0, 5.25)} alto={70} tam={34} />
       </Mundo>
     </>
   );
@@ -62,7 +84,10 @@ export const Pregunta = ({t}: {t: number}) => {
   const e = estadoEn(sim, t);
   // de un primer plano lateral de los brazos a una vista trasera baja
   const k = tramo(t, 3.7, 4.6);
-  const c = camSigue(e, lerp(-3.4, -0.3, k), lerp(2.3, 1.3, k), lerp(1.2, -4.8, k), lerp(0.3, 3, k), lerp(1.3, 1, k));
+  const orb = 1.9 - t * 0.35; // órbita lenta antes de los brazos
+  const c = t < 2.6
+    ? camSigue(e, Math.sin(orb) * 4.2, 2.1, Math.cos(orb) * 4.2, 0, 1)
+    : camSigue(e, lerp(-2.6, -0.3, k), lerp(1.9, 1.3, k), lerp(0.5, -4.8, k), lerp(0.4, 3, k), lerp(1.3, 1, k));
   const brazos = t > 2.6 && t < 3.9;
   return (
     <>
@@ -70,6 +95,8 @@ export const Pregunta = ({t}: {t: number}) => {
       <Mundo a={e}>
         <Carretera pts={camino} />
         <MotoEn e={e} brazos={brazos} />
+        <Etiqueta p={local(e, 0, 2.2, 0)} texto="¿QUIÉN GIRA?" vis={tramo(t, 0.9, 1.1) - tramo(t, 2.5, 2.65)} alto={50} tam={40} />
+        <Rafagas e={e} fuerza={0.7} />
         <Etiqueta p={local(e, -0.3, 1.5, 0.3)} texto="¿TUS BRAZOS? ✕" color={ROJO} vis={tramo(t, 2.65, 2.9) - tramo(t, 3.7, 3.9)} alto={80} />
         <Etiqueta p={local(e, 0, 2.05, 0)} texto={`INCLINACIÓN ${Math.round((e.lean * 180) / Math.PI)}°`} vis={tramo(t, 4.0, 4.3)} alto={60} />
       </Mundo>
@@ -100,6 +127,7 @@ export const Ochenta = ({t}: {t: number}) => {
       <Camara pos={[0.6, 1.9 + vib, -4.2]} mira={[0, 1.2, 12]} fov={50} />
       <Mundo a={e}>
         <Carretera pts={camino} />
+        <Rafagas e={e} fuerza={1.4} n={60} />
         <MotoEn e={e} />
         {chevrones.map((c, i) => (
           <group key={i} position={[c.x, 1, c.z]} rotation={[0, c.r + Math.PI / 2, 0]}>

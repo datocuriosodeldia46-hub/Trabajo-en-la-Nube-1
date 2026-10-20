@@ -1,7 +1,8 @@
 import {AbsoluteFill, Audio, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {ThreeCanvas} from '@remotion/three';
 import {ORO} from './Moto';
-import {Luces} from './Escenario';
+import {Efectos, Entorno, golpe, Luces} from './Escenario';
+import EVENTOS from './eventos.json';
 import {Bici, DeLargo, ESCENAS, Final, Gancho, Mecanismo, Ochenta, Pregunta, Solita, VsCoche} from './Escenas';
 import {CLAVE, PALABRAS} from './palabras';
 import {tramo} from './util';
@@ -17,7 +18,7 @@ const FRASES = (() => {
   let cur: number[] = [];
   PALABRAS.forEach(([w], i) => {
     cur.push(i);
-    if (/[.,?]$/.test(w) || cur.length === 4) { out.push(cur); cur = []; }
+    if (/[.,?]$/.test(w) || cur.length === 3) { out.push(cur); cur = []; }
   });
   if (cur.length) out.push(cur);
   return out;
@@ -30,7 +31,7 @@ const Subtitulos = ({s}: {s: number}) => {
   const frase = FRASES.find((f) => f.includes(k))!;
   return (
     <div style={{position: 'absolute', top: 250, width: '100%', padding: '0 70px', textAlign: 'center', fontFamily: SANS,
-      fontSize: 70, fontWeight: 800, lineHeight: 1.25, textShadow: '0 4px 18px rgba(0,0,0,.8)'}}>
+      fontSize: 84, fontWeight: 900, lineHeight: 1.15, letterSpacing: -1, textShadow: '0 4px 18px rgba(0,0,0,.8)'}}>
       {frase.map((i) => {
         if (i > k) return null;
         const [w, a] = PALABRAS[i];
@@ -38,9 +39,9 @@ const Subtitulos = ({s}: {s: number}) => {
         const clave = CLAVE.has(w);
         const pop = spring({frame: Math.round((s - a) * fps), fps, config: {damping: 14, stiffness: 220}, durationInFrames: 8});
         return (
-          <span key={i} style={{display: 'inline-block', margin: '0 9px', padding: clave ? '0 12px' : 0,
-            color: actual ? '#ffffff' : 'rgba(225,232,245,.55)', transform: `scale(${actual ? 0.88 + 0.12 * pop : 1})`,
-            border: clave ? `3px solid ${ORO}` : 'none', borderRadius: 8, background: clave && actual ? 'rgba(245,196,81,.18)' : 'transparent'}}>
+          <span key={i} style={{display: 'inline-block', margin: '0 12px',
+            color: clave ? ORO : actual ? '#ffffff' : 'rgba(235,240,250,.6)', transform: `scale(${actual ? 0.82 + 0.18 * pop : 1}) translateY(${actual ? (1 - pop) * 14 : 0}px)`,
+            WebkitTextStroke: '2px rgba(0,0,0,.55)', textShadow: clave ? `0 0 28px ${ORO}88, 0 6px 18px rgba(0,0,0,.9)` : '0 6px 18px rgba(0,0,0,.9)'}}>
             {w}
           </span>
         );
@@ -113,18 +114,24 @@ export const Contramanillar = () => {
   const t = s - esc.de;
   const Escena = COMPONENTES[esc.id];
   // destello corto en cada corte
-  const flash = interpolate(t, [0, 0.12], [0.35, 0], {extrapolateRight: 'clamp'});
+  const flash = interpolate(t, [0, 0.1], [0.22, 0], {extrapolateRight: 'clamp'});
+  // barrido (latigazo) alrededor de cada corte: desenfoque que sube antes y baja después
+  const latigo = EVENTOS.cortes.reduce((acc, c) => Math.max(acc, Math.max(0, 1 - Math.abs(s - c) / 0.1)), 0);
   const velOchenta = esc.id === 'ochenta' ? tramo(t, 0, 0.4) : 0;
   const velBici = esc.id === 'bici' ? tramo(t, 0.2, 0.5) : 0;
   const kmhBici = esc.id === 'bici' ? interpolate(t, [0, 3, 4.2, 6.6], [10, 10, 34, 36], {extrapolateRight: 'clamp'}) : 0;
 
   return (
     <AbsoluteFill style={{background: 'radial-gradient(ellipse at 50% 40%, #16233d 0%, #0b1324 55%, #060a14 100%)'}}>
-      <Audio src={staticFile('narracion.mp3')} />
-      <ThreeCanvas width={width} height={height} shadows gl={{antialias: true}} camera={{fov: 40, near: 0.05, far: 300}}>
-        <Luces />
-        <Escena t={t} />
-      </ThreeCanvas>
+      <Audio src={staticFile('mezcla.wav')} />
+      <AbsoluteFill style={{filter: latigo > 0.02 ? `blur(${latigo * 14}px)` : undefined, transform: `scale(${1 + latigo * 0.06})`}}>
+        <ThreeCanvas width={width} height={height} shadows gl={{antialias: true}} camera={{fov: 40, near: 0.05, far: 300}}>
+          <Entorno />
+          <Luces />
+          <Escena t={t} />
+          <Efectos s={s} />
+        </ThreeCanvas>
+      </AbsoluteFill>
       <Velocimetro kmh={80 + Math.sin(s * 9) * 0.6} vis={velOchenta} />
       <Velocimetro kmh={kmhBici} vis={velBici} marca={20} />
       {esc.id === 'final' && <Compartir s={s} />}

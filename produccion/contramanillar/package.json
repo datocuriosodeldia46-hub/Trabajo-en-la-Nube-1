@@ -2,8 +2,9 @@
   "name": "reel-contramanillar",
   "private": true,
   "scripts": {
+    "audio": "python3 audio/mezcla.py",
     "studio": "remotion studio src/index.ts",
-    "render": "remotion render src/index.ts Contramanillar out/contramanillar.mp4"
+    "render": "python3 audio/mezcla.py && remotion render src/index.ts Contramanillar out/contramanillar.mp4"
   },
   "dependencies": {
     "remotion": "4.0.536",
@@ -12,6 +13,8 @@
     "three": "0.186.1",
     "@react-three/fiber": "8.18.0",
     "@react-three/drei": "9.122.0",
+    "@react-three/postprocessing": "2.19.1",
+    "postprocessing": "6.39.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "@types/three": "0.186.0"
