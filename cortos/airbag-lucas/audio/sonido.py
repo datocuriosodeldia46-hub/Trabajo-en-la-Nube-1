@@ -60,7 +60,7 @@ def env(x, a, d, peak=1.0):
     e = np.zeros(N)
     u = t - x
     e = np.where((u >= 0) & (u < a), u / max(a, 1e-4), e)
-    e = np.where(u >= a, np.exp(-(u - a) / max(d, 1e-4)), e)
+    e = np.where(u >= a, np.exp(-np.clip(u - a, 0, None) / max(d, 1e-4)), e)
     return e * peak
 
 
@@ -339,16 +339,37 @@ voice = np.frombuffer(raw, dtype="<f4").astype(np.float64)
 voice = np.pad(voice, (0, max(0, N - len(voice))))[:N]
 voice = hp(voice, 80)
 
+
+def compress(x, thr_db=-24, ratio=4.0, att=0.0015, rel=0.08):
+    """Feed-forward peak compressor (smoothed |x| envelope), for the voice's crest factor."""
+    a_att, a_rel = np.exp(-1 / (att * SR)), np.exp(-1 / (rel * SR))
+    e = np.abs(x)
+    env = np.empty_like(e)
+    s_ = 0.0
+    for i in range(len(e)):
+        c = a_att if e[i] > s_ else a_rel
+        s_ = c * s_ + (1 - c) * e[i]
+        env[i] = s_
+    thr = db(thr_db) * np.max(np.abs(x))
+    g = np.where(env > thr, (env / thr) ** (1 / ratio - 1), 1.0)
+    return x * g
+
+
+voice = compress(voice)
+voice = voice / np.max(np.abs(voice)) * 0.5
+
 # side-chain: duck everything under the voice
-venv = np.sqrt(lp(voice ** 2, 8))
+venv = np.sqrt(np.maximum(lp(voice ** 2, 8), 0))
 duck = 1 - 0.55 * np.clip(venv / (np.percentile(venv, 95) + 1e-9), 0, 1)
 
 stems = {
     "voz": np.stack([voice, voice]),
-    "musica": pan(music_all, 0) * duck * db(-8),
-    "ambiente": (pan(city, -0.15) * db(-20) + pan(engine, 0.1) * db(-14)) * duck,
-    "fx": fx * (0.4 + 0.6 * duck) + pan(scrape_s, 0.25) * db(-18),
+    "musica": pan(music_all, 0) * duck * db(-13),
+    "ambiente": (pan(city, -0.15) * db(-23) + pan(engine, 0.1) * db(-17)) * duck,
+    "fx": (fx * (0.4 + 0.6 * duck) + pan(scrape_s, 0.25) * db(-18)) * db(-11),
 }
+# tame the effect transients so the limiter never works hard: a soft knee on the fx stem
+stems["fx"] = np.tanh(stems["fx"] * 2.2) / 2.2
 
 
 # ───────────────────────────── loudness + true-peak limiting ─────────────────────────────
@@ -387,12 +408,21 @@ def limit(x, ceil_db=-3.4, look=256, rel_s=0.12):
     return delayed * out, 20 * np.log10(out.min())
 
 
-mix = sum(stems.values())
-gain = -14.0 - lufs(mix)
-mix = mix * db(gain)
-mix, gr = limit(mix)
-mix = np.roll(mix, -256, axis=1)    # undo the limiter's look-ahead delay
-mix[:, -256:] = 0
+def limited(x, ceil_db):
+    y, g = limit(x, ceil_db)
+    y = np.roll(y, -256, axis=1)    # undo the look-ahead delay
+    y[:, -256:] = 0
+    return y, g
+
+
+gain = -14.0 - lufs(sum(stems.values()))
+stem_gr = {}
+for _ in range(2):   # per-stem limiters on the peaky stems, then re-level the sum
+    lv = {k: v * db(gain) for k, v in stems.items()}
+    lv["voz"], stem_gr["voz"] = limited(lv["voz"], -5.0)
+    lv["fx"], stem_gr["fx"] = limited(lv["fx"], -7.0)
+    gain += -14.0 - lufs(sum(lv.values()))
+mix, gr = limited(sum(lv.values()), -3.4)
 final_lufs = lufs(mix)
 
 (HERE / "stems").mkdir(exist_ok=True)
@@ -407,10 +437,10 @@ def write(path, x):
         w.writeframes((x.T * 32767).astype("<i2").tobytes())
 
 
-for k, v in stems.items():
-    write(HERE / "stems" / f"{k}.wav", v * db(gain))
+for k, v in lv.items():
+    write(HERE / "stems" / f"{k}.wav", v)
 write(HERE / "mix.wav", mix)
-rep = {"lufs": round(final_lufs, 2), "true_peak_dbtp": round(true_peak(mix), 2), "makeup_gain_db": round(gain, 2), "limiter_max_gr_db": round(gr, 2),
-       "stem_lufs": {k: round(lufs(v * db(gain)), 1) for k, v in stems.items()}}
+rep = {"lufs": round(final_lufs, 2), "true_peak_dbtp": round(true_peak(mix), 2), "makeup_gain_db": round(gain, 2), "limiter_max_gr_db": round(gr, 2), "stem_limiter_gr_db": {k: round(v, 2) for k, v in stem_gr.items()},
+       "stem_lufs": {k: round(lufs(v), 1) for k, v in lv.items()}}
 (HERE / "mix_report.json").write_text(json.dumps(rep, indent=1))
 print(json.dumps(rep, indent=1))

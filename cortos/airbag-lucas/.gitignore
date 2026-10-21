@@ -5,3 +5,4 @@ render/*.txt
 _q.mjs
 render/preview/
 audio/stems/
+audio/mix.wav

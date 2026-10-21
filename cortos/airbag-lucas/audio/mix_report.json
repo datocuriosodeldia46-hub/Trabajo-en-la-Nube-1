@@ -1,0 +1,16 @@
+{
+ "lufs": -14.63,
+ "true_peak_dbtp": -3.1,
+ "makeup_gain_db": 10.65,
+ "limiter_max_gr_db": -5.55,
+ "stem_limiter_gr_db": {
+  "voz": -9.58,
+  "fx": -7.3
+ },
+ "stem_lufs": {
+  "voz": -16.7,
+  "musica": -21.2,
+  "ambiente": -21.2,
+  "fx": -20.0
+ }
+}
