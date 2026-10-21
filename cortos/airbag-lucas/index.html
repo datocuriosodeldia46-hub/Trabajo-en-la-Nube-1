@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lucas — el airbag</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: absolute; inset: 0; margin: auto; height: 100vh; width: 56.25vh; max-width: 100vw; max-height: 177.78vw; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<canvas id="c" width="1080" height="1920"></canvas>
+<script type="module">
+// "Lucas": a 35 s vertical short. Every frame is a pure function of time: renderAt(t).
+// Paseo de la Reforma at night, a delivery rider, a truck, and the airbag vest in X-ray.
+import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+const Q = new URLSearchParams(location.search);
+const W = 1080, HGT = 1920, FPS = 30;
+let SUB = +(Q.get('sub') ?? 1);
+const SHUTTER = 0.5;
+
+// ───────────────────────────── utilities ─────────────────────────────
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const ss = (a, b, x) => { const u = clamp((x - a) / (b - a)); return u * u * (3 - 2 * u); };
+const sm = (a, b, x) => { const u = clamp((x - a) / (b - a)); return u * u * u * (u * (u * 6 - 15) + 10); };
+const win = (t, a, b, c, d) => ss(a, b, t) * (1 - ss(c, d, t));
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+const std = (color, rough = 0.6, metal = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
+const hdr = (hex, k) => { const c = new THREE.Color(hex); return new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r * k, c.g * k, c.b * k) }); };
+const rbox = (w, h, d, r = 0.05, seg = 3) => new RoundedBoxGeometry(w, h, d, seg, Math.min(r, w / 2 - 1e-3, h / 2 - 1e-3, d / 2 - 1e-3));
+function mesh(geo, mat, parent, pos = [0, 0, 0], rot = [0, 0, 0], shadow = true) {
+  const m = new THREE.Mesh(geo, mat); m.position.set(...pos); m.rotation.set(...rot);
+  m.castShadow = shadow; m.receiveShadow = true; if (parent) parent.add(m); return m;
+}
+function spline(keys) {   // monotone cubic in time per dimension
+  const n = keys.length, T = keys.map(k => k[0]), V = keys.map(k => k.slice(1)), D = V[0].length;
+  const M = V.map((v, i) => v.map((_, d) => {
+    if (i === 0 || i === n - 1) return 0;
+    const a = (V[i][d] - V[i - 1][d]) / (T[i] - T[i - 1]), b = (V[i + 1][d] - V[i][d]) / (T[i + 1] - T[i]);
+    if (a * b <= 0) return 0;
+    return 3 * (T[i + 1] - T[i - 1]) / ((2 * T[i + 1] - T[i] - T[i - 1]) / a + (T[i + 1] + T[i] - 2 * T[i - 1]) / b);
+  }));
+  return (t) => {
+    if (t <= T[0]) return V[0].slice(); if (t >= T[n - 1]) return V[n - 1].slice();
+    let i = 0; while (t > T[i + 1]) i++;
+    const h = T[i + 1] - T[i], u = (t - T[i]) / h, u2 = u * u, u3 = u2 * u;
+    const a = 2 * u3 - 3 * u2 + 1, b = u3 - 2 * u2 + u, c = -2 * u3 + 3 * u2, e = u3 - u2;
+    return V[i].map((_, d) => a * V[i][d] + b * h * M[i][d] + c * V[i + 1][d] + e * h * M[i + 1][d]);
+  };
+}
+function canvasTex(w, h, draw, srgb = true) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(cv); if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+}
+
+// ───────────────────────────── renderer ─────────────────────────────
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(1); renderer.setSize(W, HGT, false);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace; renderer.toneMapping = THREE.NoToneMapping;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, W / HGT, 0.05, 900);
+
+// ───────────────────────────── the X-ray look ─────────────────────────────
+// A Fresnel hologram: bright green rims, faint fill, additive — the signature of the genre.
+const XRAY = [];
+function xrayMat(strength = 1, color = [0.35, 1.0, 0.62]) {
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uK: { value: 0 }, uS: { value: strength }, uC: { value: new THREE.Vector3(...color) } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; void main(){ vec4 w=modelMatrix*vec4(position,1.0); vN=normalize(mat3(modelMatrix)*normal); vV=normalize(cameraPosition-w.xyz); gl_Position=projectionMatrix*viewMatrix*w; }`,
+    fragmentShader: `uniform float uK, uS; uniform vec3 uC; varying vec3 vN; varying vec3 vV;
+      void main(){ float f=1.0-abs(dot(normalize(vN),normalize(vV))); float rim=pow(f,2.2);
+        vec3 c=uC*(0.10+1.6*rim)*uS + vec3(0.8,1.0,0.9)*pow(f,7.0)*0.9*uS; gl_FragColor=vec4(c*uK,1.0); }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  XRAY.push(m); return m;
+}
+// Each part keeps its normal look and an X-ray twin that fades in while the "solid" fades out.
+const DUAL = [];
+function dual(mesh_, strength = 1) {
+  const x = new THREE.Mesh(mesh_.geometry, xrayMat(strength)); x.castShadow = false; x.renderOrder = 20;
+  mesh_.add(x); DUAL.push({ solid: mesh_, x });
+  return mesh_;
+}
+
+// ───────────────────────────── the city: Paseo de la Reforma ─────────────────────────────
+const ROAD = { half: 9.5, z0: 60, z1: -620 };
+const ANGEL_Z = -300;
+const LIGHTS_ROAD = [];   // positions of lamps/car lights → bokeh + wet-road streaks
+function buildCity() {
+  const R = rng(11);
+  // wet asphalt: low roughness so the lights smear across it
+  const asphaltTex = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#2a2c31'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 9000; i++) { const v = 30 + R() * 30; g.fillStyle = `rgb(${v},${v},${v + 4})`; g.fillRect(R() * w, R() * h, 1.5, 1.5); }
+    for (let i = 0; i < 14; i++) { g.fillStyle = 'rgba(10,10,14,0.35)'; g.beginPath(); g.ellipse(R() * w, R() * h, 20 + R() * 60, 8 + R() * 30, R() * 3, 0, 7); g.fill(); }
+  });
+  asphaltTex.wrapS = asphaltTex.wrapT = THREE.RepeatWrapping; asphaltTex.repeat.set(4, 140);
+  const road = mesh(new THREE.PlaneGeometry(2 * ROAD.half, ROAD.z0 - ROAD.z1), std(0xffffff, 0.22, 0.0, { map: asphaltTex, envMapIntensity: 1.6 }), scene, [0, 0, (ROAD.z0 + ROAD.z1) / 2], [-Math.PI / 2, 0, 0], false);
+  MAT.road = road.material;
+  // lane markings
+  const dash = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.15, 3), std(0xf2f2ee, 0.4, 0, { emissive: 0x222222 }), 600);
+  const o = new THREE.Object3D(); let n = 0;
+  for (const x of [-4.75, 0, 4.75]) for (let z = ROAD.z0; z > ROAD.z1 && n < 600; z -= 9) { o.position.set(x, 0.01, z); o.rotation.set(-Math.PI / 2, 0, 0); o.updateMatrix(); dash.setMatrixAt(n++, o.matrix); }
+  dash.count = n; dash.receiveShadow = true; scene.add(dash);
+  for (const x of [-ROAD.half + 0.3, ROAD.half - 0.3]) mesh(new THREE.PlaneGeometry(0.14, ROAD.z0 - ROAD.z1), std(0xf2c94e, 0.5), scene, [x, 0.012, (ROAD.z0 + ROAD.z1) / 2], [-Math.PI / 2, 0, 0], false);
+  // sidewalks and the tree-lined lateral strips of Reforma
+  for (const s of [-1, 1]) {
+    mesh(new THREE.BoxGeometry(9, 0.18, ROAD.z0 - ROAD.z1), std(0x3a3a3e, 0.8), scene, [s * (ROAD.half + 4.5), 0.09, (ROAD.z0 + ROAD.z1) / 2], [0, 0, 0], false);
+    mesh(new THREE.BoxGeometry(0.25, 0.2, ROAD.z0 - ROAD.z1), std(0x8a8780, 0.6), scene, [s * (ROAD.half + 0.12), 0.1, (ROAD.z0 + ROAD.z1) / 2], [0, 0, 0], false);
+  }
+  // trees (ahuehuetes / fresnos)
+  const trunkG = new THREE.CylinderGeometry(0.16, 0.24, 4, 7), leafG = new THREE.IcosahedronGeometry(1, 1);
+  const trunks = new THREE.InstancedMesh(trunkG, std(0x2c2420, 0.9), 220), leaves = new THREE.InstancedMesh(leafG, std(0x1d3a24, 0.85), 660);
+  let nt = 0, nl = 0;
+  for (const s of [-1, 1]) for (let z = ROAD.z0 - 4; z > ROAD.z1; z -= 13 + R() * 4) {
+    if (Math.abs(z - ANGEL_Z) < 40) continue;
+    const x = s * (ROAD.half + 2.8 + R() * 1.2);
+    o.position.set(x, 2, z); o.rotation.set(0, 0, 0); o.scale.set(1, 1, 1); o.updateMatrix(); trunks.setMatrixAt(nt++, o.matrix);
+    for (let k = 0; k < 3; k++) { o.position.set(x + (R() - .5) * 1.6, 4.4 + R() * 1.6, z + (R() - .5) * 1.6); const sc = 1.3 + R() * 0.9; o.scale.set(sc, sc * 0.85, sc); o.updateMatrix(); leaves.setMatrixAt(nl++, o.matrix); }
+  }
+  trunks.count = nt; leaves.count = nl; trunks.castShadow = leaves.castShadow = true; scene.add(trunks, leaves);
+  // street lamps (warm) — light pools come from a few real lights near the action
+  const poleG = new THREE.CylinderGeometry(0.07, 0.1, 8, 8), headG = rbox(0.9, 0.18, 0.4, 0.06);
+  const poleM = std(0x2a2d33, 0.5, 0.6), headM = hdr(0xffd9a0, 9);
+  for (const s of [-1, 1]) for (let z = ROAD.z0; z > ROAD.z1; z -= 28) {
+    if (Math.abs(z - ANGEL_Z) < 40) continue;
+    const x = s * (ROAD.half + 1.0);
+    mesh(poleG, poleM, scene, [x, 4, z], [0, 0, 0], false);
+    mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.6, 6), poleM, scene, [x - s * 0.8, 7.9, z], [0, 0, Math.PI / 2], false);
+    mesh(headG, headM, scene, [x - s * 1.5, 7.85, z], [0, 0, 0], false);
+    LIGHTS_ROAD.push({ p: V3(x - s * 1.5, 7.8, z), c: new THREE.Color(1.0, 0.82, 0.55), k: 1 });
+  }
+  // buildings: Reforma's towers, windows as emissive grids
+  const winTex = [0, 1, 2].map(v => canvasTex(256, 512, (g, w, h) => {
+    g.fillStyle = '#0c0e14'; g.fillRect(0, 0, w, h);
+    const cw = 32, ch = 34;   // one bay ≈ 3 m wide, one floor ≈ 3.2 m (repeat = size/48)
+    for (let y = 6; y < h; y += ch) { const floorLit = R() < 0.75; for (let x = 4; x < w; x += cw) {
+      const r = R(); if (!floorLit || r < 0.5) { g.fillStyle = '#141820'; g.fillRect(x, y, cw - 6, ch - 12); continue; }
+      g.fillStyle = r < 0.8 ? `rgba(255,${200 + R() * 40 | 0},${130 + R() * 60 | 0},${0.5 + R() * 0.5})` : `rgba(${150 + R() * 60 | 0},${200 + R() * 40 | 0},255,${0.4 + R() * 0.5})`;
+      g.fillRect(x, y, cw - 6, ch - 12);
+    } }
+  }));
+  winTex.forEach(t => { t.wrapS = t.wrapT = THREE.RepeatWrapping; });
+  for (const s of [-1, 1]) for (let z = ROAD.z0 + 10; z > ROAD.z1 - 40;) {
+    const wdt = 16 + R() * 18, dep = 14 + R() * 10, hgt = 18 + Math.pow(R(), 2) * 110;
+    if (Math.abs(z - ANGEL_Z) < 45) { z -= 30; continue; }
+    const tex = winTex[Math.floor(R() * 3)].clone(); tex.needsUpdate = true; tex.repeat.set(wdt / 48, hgt / 48);
+    const m = std(0x1a1d26, 0.35, 0.3, { emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1.4 + R() * 0.8 });
+    const b = mesh(new THREE.BoxGeometry(dep, hgt, wdt), m, scene, [s * (ROAD.half + 9 + dep / 2 + R() * 3), hgt / 2, z - wdt / 2], [0, 0, 0], false);
+    b.receiveShadow = false;
+    if (R() < 0.35) mesh(new THREE.BoxGeometry(dep * 0.9, 0.3, wdt * 0.9), hdr([0xff4060, 0x40c0ff, 0xffffff][Math.floor(R() * 3)], 3), scene, [b.position.x, hgt + 0.2, b.position.z], [0, 0, 0], false);
+    z -= wdt + 2 + R() * 6;
+  }
+  // sky: deep blue night with the warm glow of the city near the horizon
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(800, 32, 16), new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false,
+    vertexShader: `varying vec3 vP; void main(){ vP=normalize(position); gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+    fragmentShader: `varying vec3 vP; void main(){ float h=vP.y; vec3 top=vec3(0.01,0.015,0.04); vec3 hor=vec3(0.11,0.07,0.09);
+      vec3 c=mix(hor,top,smoothstep(0.0,0.35,h)); gl_FragColor=vec4(c,1.0); }`,
+  }));
+  scene.add(sky);
+  buildAngel();
+  buildTraffic(R);
+}
+// El Ángel de la Independencia: glorieta, stepped pedestal, column, golden Victory on top.
+function buildAngel() {
+  const g = new THREE.Group(); g.position.set(0, 0, ANGEL_Z); scene.add(g);
+  const stone = std(0xd8d2c4, 0.55), stoneDark = std(0xa9a397, 0.6);
+  mesh(new THREE.CylinderGeometry(24, 24, 0.25, 48), std(0x2f3a2c, 0.9), g, [0, 0.12, 0], [0, 0, 0], false);
+  mesh(new THREE.CylinderGeometry(9, 10, 1.2, 8), stone, g, [0, 0.6, 0], [0, 0, 0], false);
+  mesh(new THREE.CylinderGeometry(7, 7.5, 2.4, 8), stoneDark, g, [0, 2.4, 0], [0, 0, 0], false);
+  mesh(new THREE.BoxGeometry(6.4, 6, 6.4), stone, g, [0, 6.6, 0], [0, 0, 0], false);
+  mesh(new THREE.CylinderGeometry(2.6, 3.2, 2.2, 16), stone, g, [0, 10.7, 0], [0, 0, 0], false);
+  const col = mesh(new THREE.CylinderGeometry(1.45, 1.8, 30, 24), std(0xe8e2d4, 0.45, 0, { emissive: 0xffb36b, emissiveIntensity: 0.08 }), g, [0, 26.8, 0], [0, 0, 0], false);
+  for (let i = 0; i < 4; i++) mesh(new THREE.TorusGeometry(1.75 - i * 0.05, 0.12, 8, 32), stone, g, [0, 14 + i * 8, 0], [Math.PI / 2, 0, 0], false);
+  mesh(new THREE.CylinderGeometry(2.4, 1.5, 1.6, 16), std(0xe8e2d4, 0.5), g, [0, 42.6, 0], [0, 0, 0], false);
+  // the golden Victory: body, wings, raised wreath
+  const gold = std(0xffc85a, 0.28, 1.0, { emissive: 0xff9a2a, emissiveIntensity: 0.35 });
+  const v = new THREE.Group(); v.position.set(0, 43.4, 0); g.add(v);
+  mesh(new THREE.CylinderGeometry(0.25, 0.7, 3.2, 12), gold, v, [0, 1.6, 0], [0, 0, 0], false);
+  mesh(new THREE.SphereGeometry(0.32, 16, 12), gold, v, [0, 3.45, 0], [0, 0, 0], false);
+  const wingShape = new THREE.Shape(); wingShape.moveTo(0, 0); wingShape.quadraticCurveTo(1.4, 1.2, 2.6, 3.4); wingShape.quadraticCurveTo(1.6, 2.2, 0.2, 1.6); wingShape.lineTo(0, 0);
+  const wingG = new THREE.ExtrudeGeometry(wingShape, { depth: 0.12, bevelEnabled: true, bevelSize: 0.05, bevelThickness: 0.05, bevelSegments: 2 });
+  for (const s of [-1, 1]) { const w = mesh(wingG, gold, v, [s * 0.2, 1.9, -0.25], [0.15, s > 0 ? 0 : Math.PI, 0], false); }
+  mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.6, 8), gold, v, [0.45, 3.8, 0], [0, 0, -0.5], false);
+  mesh(new THREE.TorusGeometry(0.35, 0.08, 8, 20), gold, v, [0.85, 4.55, 0], [0, 0.3, 0], false);
+  // floodlights on the column
+  for (const a of [0, 2.1, 4.2]) {
+    const sp = new THREE.SpotLight(0xffc488, 900, 70, 0.35, 0.6, 2); sp.position.set(Math.cos(a) * 12, 1, Math.sin(a) * 12); sp.target.position.set(0, 30, 0);
+    g.add(sp, sp.target);
+  }
+  LIGHTS_ROAD.push({ p: V3(0, 46, ANGEL_Z), c: new THREE.Color(1, 0.8, 0.4), k: 2 });
+}
+const TRAFFIC = [];
+function buildTraffic(R) {
+  // a few cars far ahead and in the other lanes: mostly their lights, for bokeh and streaks
+  for (let i = 0; i < 18; i++) {
+    const lane = [-7.1, -2.4, 2.4, 7.1][Math.floor(R() * 4)];
+    const z = lane > 0 ? -300 - R() * 200 : -40 - R() * 260;
+    const car = new THREE.Group(); car.position.set(lane, 0, z); scene.add(car);
+    const body = mesh(rbox(1.8, 0.75, 4.3, 0.25), std([0x15161a, 0x5b6470, 0x8f1d1d, 0xd8d8d8][i % 4], 0.3, 0.6), car, [0, 0.6, 0]);
+    mesh(rbox(1.6, 0.6, 2.2, 0.25), std(0x0b0c10, 0.1, 0.8), car, [0, 1.15, 0.2]);
+    for (const s of [-0.65, 0.65]) mesh(new THREE.BoxGeometry(0.35, 0.1, 0.05), hdr(0xff2020, 6), car, [s, 0.75, 2.16], [0, 0, 0], false);
+    TRAFFIC.push({ g: car, v: 14 + R() * 6, z0: z, lane });
+    LIGHTS_ROAD.push({ p: V3(lane, 0.75, z + 2.2), c: new THREE.Color(1, 0.1, 0.08), k: 0.6, car: TRAFFIC[TRAFFIC.length - 1] });
+  }
+}
+
+// ───────────────────────────── Lucas, his bike and the truck ─────────────────────────────
+const MAT = {};
+const BIKE = {}, LUCAS = {}, TRUCK = {};
+function buildBike() {
+  const g = new THREE.Group(); scene.add(g); BIKE.g = g;   // origin: ground under the wheelbase centre, facing -z
+  const black = std(0x101114, 0.55), chrome = std(0xdadde2, 0.15, 1), paint = std(0xc8202a, 0.25, 0.3), rubber = std(0x0c0c0c, 0.85);
+  const wheel = (z) => {
+    const w = new THREE.Group(); w.position.set(0, 0.31, z); g.add(w);
+    mesh(new THREE.TorusGeometry(0.27, 0.065, 12, 36), rubber, w, [0, 0, 0], [0, Math.PI / 2, 0]);
+    mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.05, 28), std(0x2a2c30, 0.35, 0.8), w, [0, 0, 0], [0, 0, Math.PI / 2]);
+    mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.055, 24), chrome, w, [0.02, 0, 0], [0, 0, Math.PI / 2]);
+    return w;
+  };
+  BIKE.wf = wheel(-0.68); BIKE.wr = wheel(0.66);
+  // fork, frame, tank, seat, tail
+  for (const s of [-0.09, 0.09]) mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75, 10), chrome, g, [s, 0.62, -0.58], [-0.42, 0, 0]);
+  mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.85, 10), black, g, [0, 0.68, -0.1], [1.15, 0, 0]);
+  mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 10), black, g, [0, 0.45, 0.35], [-1.25, 0, 0]);
+  const tank = mesh(new THREE.SphereGeometry(0.22, 24, 16), paint, g, [0, 0.9, -0.2], [0, 0, 0]); tank.scale.set(0.9, 0.62, 1.35);
+  mesh(rbox(0.26, 0.08, 0.62, 0.035), black, g, [0, 0.86, 0.25], [0.08, 0, 0]);
+  mesh(rbox(0.22, 0.12, 0.42, 0.04), paint, g, [0, 0.82, 0.62], [-0.18, 0, 0]);
+  mesh(rbox(0.3, 0.24, 0.42, 0.06), std(0x1c1d21, 0.5, 0.3), g, [0, 0.48, -0.02]);         // engine
+  mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.6, 12), chrome, g, [0.16, 0.42, 0.45], [1.35, 0, 0]);  // exhaust
+  mesh(rbox(0.28, 0.06, 0.4, 0.03), paint, g, [0, 0.62, -0.72], [0.35, 0, 0]);           // front fender
+  // headlight, handlebars, mirrors, tail light
+  mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.1, 20), black, g, [0, 0.98, -0.78], [Math.PI / 2 - 0.2, 0, 0]);
+  mesh(new THREE.CircleGeometry(0.075, 20), hdr(0xfff6e8, 12), g, [0, 0.99, -0.835], [0.2, Math.PI, 0], false);
+  mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.7, 8), chrome, g, [0, 1.08, -0.6], [0, 0, Math.PI / 2]);
+  for (const s of [-1, 1]) { mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.12, 10), black, g, [s * 0.36, 1.08, -0.6], [0, 0, Math.PI / 2]); mesh(rbox(0.1, 0.06, 0.02, 0.01), chrome, g, [s * 0.3, 1.32, -0.58]); mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.24, 6), chrome, g, [s * 0.3, 1.2, -0.58]); }
+  mesh(new THREE.BoxGeometry(0.14, 0.05, 0.03), hdr(0xff1a14, 8), g, [0, 0.83, 0.85], [0, 0, 0], false);
+  // headlight beam
+  const beam = new THREE.SpotLight(0xfff4e0, 160, 45, 0.42, 0.5, 2); beam.position.set(0, 1.0, -0.9); beam.target.position.set(0, 0, -14);
+  g.add(beam, beam.target); BIKE.beam = beam;
+}
+function buildLucas() {
+  // A stylised rider: smooth plastic-like forms, like the genre's characters. Origin = seat contact.
+  const g = new THREE.Group(); scene.add(g); LUCAS.g = g;
+  const skin = std(0xc89070, 0.6), jacket = std(0x2b2f3a, 0.7), jeans = std(0x2f4a78, 0.75), shoe = std(0x1b1c20, 0.6);
+  const vestM = std(0x16171a, 0.55, 0, { transparent: true }), vestTrim = std(0xff7a1a, 0.45), helmetM = std(0xf4f4f2, 0.25, 0.1, { transparent: true }), visorM = std(0x05070a, 0.05, 0.9);
+  MAT.vest = vestM; MAT.helmet = helmetM;
+  const J = (parent, pos, rot = [0, 0, 0]) => { const j = new THREE.Group(); j.position.set(...pos); j.rotation.set(...rot); parent.add(j); return j; };
+  const limb = (parent, r, len, mat, along = -1) => mesh(new THREE.CapsuleGeometry(r, len, 6, 12), mat, parent, [0, along * len / 2, 0]);
+  const pelvis = J(g, [0, 0.05, 0.05]); LUCAS.pelvis = pelvis;
+  mesh(rbox(0.34, 0.2, 0.24, 0.09), jeans, pelvis, [0, 0.05, 0]);
+  const spine = J(pelvis, [0, 0.12, 0], [-0.55, 0, 0]); LUCAS.spine = spine;   // leaning forward
+  const torso = mesh(new THREE.CapsuleGeometry(0.17, 0.32, 8, 16), jacket, spine, [0, 0.26, 0]); torso.scale.set(1.1, 1, 0.78);
+  // airbag vest: a quilted shell + collar; LUCAS.inflate morphs it
+  const vest = new THREE.Group(); spine.add(vest); LUCAS.vest = vest;
+  const shell = mesh(new THREE.CapsuleGeometry(0.185, 0.3, 8, 16), vestM, vest, [0, 0.27, 0]); shell.scale.set(1.12, 1, 0.84);
+  const collar = mesh(new THREE.TorusGeometry(0.13, 0.035, 10, 24), vestM, vest, [0, 0.55, -0.01], [Math.PI / 2, 0, 0]);
+  const chambers = [];
+  for (let i = 0; i < 3; i++) for (const s of [-1, 1]) chambers.push(mesh(new THREE.CapsuleGeometry(0.05, 0.14, 6, 10), vestM, vest, [s * 0.08, 0.2 + i * 0.11, -0.15], [0, 0, Math.PI / 2]));
+  for (let i = 0; i < 3; i++) chambers.push(mesh(new THREE.CapsuleGeometry(0.05, 0.22, 6, 10), vestM, vest, [0, 0.16 + i * 0.13, 0.15], [0, 0, Math.PI / 2]));
+  LUCAS.trim = mesh(new THREE.BoxGeometry(0.4, 0.025, 0.02), vestTrim, vest, [0, 0.42, -0.16], [0, 0, 0]);
+  Object.assign(LUCAS, { shell, collar, chambers });
+  // inside the vest (seen in X-ray): sensor module, gas cartridge, ducts
+  const inner = new THREE.Group(); vest.add(inner); LUCAS.inner = inner;
+  LUCAS.sensor = mesh(rbox(0.09, 0.06, 0.025, 0.008), hdr(0x40ff90, 5), inner, [0, 0.33, 0.17], [0, 0, 0], false);
+  mesh(rbox(0.08, 0.05, 0.03, 0.006), hdr(0x40ff90, 5), inner, [0.05, 0.36, -0.17], [0, 0, 0], false);       // chest accelerometer
+  LUCAS.cartridge = mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.12, 12), std(0xc0c4c8, 0.2, 1, { emissive: 0x40ff90, emissiveIntensity: 0.4 }), inner, [0.07, 0.12, 0.17], [0, 0, 0.3], false);
+  // gas ducts: cartridge → back panel → around to the chest and collar
+  const ductM = xrayMat(2.2, [0.5, 1.0, 0.7]); LUCAS.ductM = ductM;
+  for (const pts of [[[0.07, 0.12, 0.17], [0.0, 0.25, 0.19], [-0.12, 0.35, 0.12], [-0.2, 0.3, -0.05], [-0.1, 0.25, -0.17]],
+                     [[0.07, 0.12, 0.17], [0.14, 0.3, 0.15], [0.2, 0.32, -0.02], [0.1, 0.27, -0.17]],
+                     [[0.0, 0.25, 0.19], [0.0, 0.48, 0.14], [0.0, 0.56, 0.06]]])
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(q => V3(...q))), 24, 0.016, 6), ductM, inner, [0, 0, 0], [0, 0, 0], false);
+  inner.visible = false;
+  const neck = J(spine, [0, 0.5, -0.02], [0.45, 0, 0]);
+  mesh(new THREE.CapsuleGeometry(0.055, 0.06, 6, 10), skin, neck, [0, 0.05, 0]);
+  const head = J(neck, [0, 0.16, 0]); LUCAS.head = head;
+  const helmet = mesh(new THREE.SphereGeometry(0.155, 32, 24), helmetM, head, [0, 0.05, 0]); helmet.scale.set(1, 1.05, 1.12);
+  const visor = mesh(new THREE.SphereGeometry(0.16, 32, 16, -Math.PI / 2 - 0.95, 1.9, 1.15, 0.75), visorM, head, [0, 0.05, -0.006]); visor.scale.set(1, 1.05, 1.12);
+  mesh(new THREE.TorusGeometry(0.115, 0.03, 8, 24, Math.PI), helmetM, head, [0, -0.06, -0.07], [Math.PI / 2 + 0.35, 0, Math.PI]);   // chin bar
+  mesh(rbox(0.03, 0.035, 0.24, 0.012), std(0xff7a1a, 0.4), head, [0, 0.215, 0.03]);
+  // eyes behind the visor (for the blink)
+  LUCAS.eyes = [-1, 1].map(s => { const e = mesh(new THREE.SphereGeometry(0.014, 12, 8), std(0x111111, 0.3), head, [s * 0.04, 0.06, -0.13]); e.scale.set(1, 0.7, 0.5); return e; });
+  // arms reach for the bars
+  for (const s of [-1, 1]) {
+    const sh = J(spine, [s * 0.2, 0.44, 0], [-0.75, 0, s * 0.22]);
+    limb(sh, 0.068, 0.22, jacket);
+    const el = J(sh, [0, -0.29, 0], [-0.55, 0, 0]);
+    limb(el, 0.058, 0.2, jacket);
+    mesh(rbox(0.09, 0.11, 0.06, 0.025), std(0x111216, 0.6), el, [0, -0.29, 0]);
+    LUCAS['arm' + s] = sh;
+  }
+  // legs to the pegs
+  for (const s of [-1, 1]) {
+    const hip = J(pelvis, [s * 0.11, 0, -0.02], [1.15, 0, s * 0.12]);
+    limb(hip, 0.075, 0.32, jeans);
+    const kn = J(hip, [0, -0.42, 0], [-1.9, 0, 0]);
+    limb(kn, 0.06, 0.32, jeans);
+    mesh(rbox(0.1, 0.08, 0.24, 0.03), shoe, kn, [0, -0.43, -0.06]);
+    LUCAS['leg' + s] = hip;
+  }
+  // delivery backpack
+  const bag = mesh(rbox(0.36, 0.4, 0.2, 0.05), std(0xff7a1a, 0.55), spine, [0, 0.28, 0.25]); LUCAS.bag = bag;
+  mesh(new THREE.BoxGeometry(0.2, 0.08, 0.005), hdr(0xffffff, 1.2), bag, [0, 0.05, 0.102], [0, 0, 0], false);
+  { const ms = []; vest.traverse(o => { if (o.isMesh && o.material === vestM) ms.push(o); }); ms.forEach(o => dual(o, 0.8)); }
+  { const ms = []; head.traverse(o => { if (o.isMesh && o.material === helmetM) ms.push(o); }); ms.forEach(o => dual(o, 0.8)); }
+}
+function buildTruck() {
+  const g = new THREE.Group(); scene.add(g); TRUCK.g = g;   // facing -z, origin on the ground at the centre
+  const white = std(0xeceae4, 0.35, 0.1), dark = std(0x16181c, 0.6), glass = std(0x0a0e14, 0.05, 0.9), rubber = std(0x0c0c0c, 0.85);
+  mesh(rbox(2.5, 2.9, 5.2, 0.12), white, g, [0, 1.95, 1.0]);                                     // cargo box
+  mesh(new THREE.BoxGeometry(2.52, 0.35, 5.2), std(0x1f6fd1, 0.4), g, [0, 1.15, 1.0]);             // stripe
+  mesh(rbox(2.4, 2.3, 1.9, 0.25), white, g, [0, 1.55, -2.6]);                                    // cab
+  mesh(rbox(2.2, 0.9, 0.08, 0.05), glass, g, [0, 2.2, -3.55], [0.12, 0, 0]);                     // windscreen
+  for (const s of [-1, 1]) mesh(new THREE.BoxGeometry(0.05, 0.7, 1.1), glass, g, [s * 1.21, 2.15, -2.6]);
+  mesh(rbox(2.45, 0.35, 0.3, 0.08), dark, g, [0, 0.55, -3.55]);                                  // bumper
+  for (const s of [-1, 1]) mesh(rbox(0.35, 0.18, 0.05, 0.03), hdr(0xfff3dc, 10), g, [s * 0.85, 0.95, -3.57], [0, 0, 0], false);
+  for (const s of [-1, 1]) mesh(new THREE.BoxGeometry(0.3, 0.25, 0.05), hdr(0xff1810, 6), g, [s * 1.0, 0.9, 3.62], [0, 0, 0], false);
+  mesh(new THREE.BoxGeometry(2.3, 0.7, 6.8), dark, g, [0, 0.55, 0.0]);                           // chassis
+  for (const z of [-2.6, 1.6, 2.6]) for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.32, 24), rubber, g, [s * 1.08, 0.48, z], [0, 0, Math.PI / 2]);
+  // cargo side text
+  const tex = canvasTex(1024, 512, (c, w, h) => { c.fillStyle = '#eceae4'; c.fillRect(0, 0, w, h); c.fillStyle = '#1f6fd1'; c.font = 'bold 120px Inter, sans-serif'; c.fillText('MUDANZAS', 60, 210); c.font = '600 70px Inter, sans-serif'; c.fillStyle = '#333'; c.fillText('EXPRESS  ·  CDMX', 64, 320); });
+  for (const s of [-1, 1]) mesh(new THREE.PlaneGeometry(4.6, 2.3), std(0xffffff, 0.4, 0, { map: tex }), g, [s * 1.255, 2.05, 1.0], [0, s * Math.PI / 2, 0], false);
+}
+
+// ───────────────────────────── lights ─────────────────────────────
+const LIGHTS = {};
+function buildLights() {
+  LIGHTS.hemi = new THREE.HemisphereLight(0x6a7aa8, 0x1a1418, 0.6); scene.add(LIGHTS.hemi);
+  const moon = new THREE.DirectionalLight(0xaec4ff, 0.9); moon.position.set(-30, 60, 20); moon.castShadow = true;
+  moon.shadow.mapSize.set(2048, 2048); Object.assign(moon.shadow.camera, { left: -12, right: 12, top: 12, bottom: -12, near: 1, far: 140 }); moon.shadow.bias = -0.0004;
+  scene.add(moon, moon.target); LIGHTS.moon = moon;
+  // two street-lamp pools that travel with the action (the lamps themselves are emissive)
+  LIGHTS.lamps = [0, 1].map(() => { const l = new THREE.PointLight(0xffc98a, 260, 28, 2); scene.add(l); return l; });
+  // cool rim from the far traffic
+  LIGHTS.rim = new THREE.PointLight(0x6fa8ff, 60, 25, 2); scene.add(LIGHTS.rim);
+}
+
+// ───────────────────────────── wet-road light streaks ─────────────────────────────
+let STREAKS;
+function buildStreaks() {
+  const tex = canvasTex(64, 256, (g, w, h) => { const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.15, 'rgba(255,255,255,0.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); const g2 = g.getImageData(0, 0, w, h); for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const k = Math.exp(-Math.pow((x - w / 2) / (w / 5), 2)); g2.data[(y * w + x) * 4 + 3] *= k; } g.putImageData(g2, 0, 0); }, false);
+  STREAKS = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, color: 0xffffff }), LIGHTS_ROAD.length);
+  STREAKS.renderOrder = 5; STREAKS.frustumCulled = false; scene.add(STREAKS);
+}
+const _o = new THREE.Object3D(), _c = new THREE.Color();
+function applyStreaks() {
+  // a reflection streak runs from under each light toward the camera, along the wet asphalt
+  LIGHTS_ROAD.forEach((L, i) => {
+    const p = L.car ? V3(L.car.g.position.x, 0, L.car.g.position.z + 2.2) : V3(L.p.x, 0, L.p.z);
+    const toCam = V3(camera.position.x - p.x, 0, camera.position.z - p.z); const d = toCam.length(); toCam.normalize();
+    const len = clamp(L.p.y * 1.8 + 2, 2, 30) * (L.car ? 0.5 : 1);
+    _o.position.set(p.x + toCam.x * len * 0.5, 0.02, p.z + toCam.z * len * 0.5);
+    _o.rotation.set(-Math.PI / 2, 0, Math.atan2(toCam.x, toCam.z)); _o.scale.set(L.car ? 0.5 : 0.9, len, 1); _o.updateMatrix();
+    STREAKS.setMatrixAt(i, _o.matrix);
+    const fade = clamp(1 - d / 220) * L.k;
+    _c.copy(L.c).multiplyScalar(1.4 * fade); STREAKS.setColorAt(i, _c);
+  });
+  STREAKS.instanceMatrix.needsUpdate = true; STREAKS.instanceColor.needsUpdate = true;
+}
+
+// ───────────────────────────── the performance (style-test poses) ─────────// Story time t (seconds of narration) drives a slower "world clock": while the X-ray explains the vest,
+// time almost stops (bullet time), then runs at slow motion through the crash.
+const SPEED = 22;
+const PATH = { z0: -40 };
+const T_CRASH = 19.9;
+const rate = (t) => t < 5.4 ? 1 : t < 6.9 ? lerp(1, 0.03, ss(5.4, 6.9, t)) : t < 19.6 ? 0.03 : lerp(0.03, 0.4, ss(19.6, 20.2, t));
+const WCLK = (() => { const dt = 1 / 240, a = [0]; for (let i = 1; i <= 40 * 240; i++) a.push(a[i - 1] + rate((i - 0.5) * dt) * dt); return a; })();
+const worldT = (t) => { const x = clamp(t, 0, 40) * 240, i = Math.floor(x); return lerp(WCLK[i], WCLK[Math.min(i + 1, WCLK.length - 1)], x - i); };
+const W_CRASH = worldT(T_CRASH);
+// The truck, relative to the bike: ahead in the right lane, slower, turning left across Lucas's path.
+// At the crash the bike's front wheel meets the truck's left flank just behind the cab.
+const TRUCK_REL = (w) => {
+  const k = ss(0.4, W_CRASH, w), yaw = 0.55 * k;
+  const end = V3(2.1, 0, 0.1), z = end.z - Math.max(0, W_CRASH - w) * 1.1;
+  return { x: lerp(4.7, end.x, k), z, yaw };
+};
+function state(t) {
+  const w = worldT(t), wb = Math.min(w, W_CRASH);
+  const s = { t, w, bikeZ: PATH.z0 - SPEED * wb, bikeX: 2.4, lean: 0, xVest: 0, xHelmet: 0, inflate: 0, fly: null };
+  s.xVest = win(t, 3.6, 3.8, 5.3, 5.5) + win(t, 6.9, 7.1, 19.6, 19.85) + win(t, 23.9, 24.1, 25.9, 26.0);
+  s.xHelmet = win(t, 28.7, 28.9, 30.8, 31.0);
+  s.inflate = ss(14.0, 14.3, t);
+  if (t > T_CRASH) s.fly = clamp((t - T_CRASH) / 3.0);
+  return s;
+}
+function applyAll(t) {
+  const s = state(t);
+  BIKE.g.position.set(s.bikeX, 0, s.bikeZ); BIKE.g.rotation.set(0, 0, s.lean);
+  BIKE.wf.rotation.x = BIKE.wr.rotation.x = -(SPEED * Math.min(s.w, W_CRASH)) / 0.33;
+  const tr = TRUCK_REL(s.w);
+  TRUCK.g.position.set(s.bikeX + tr.x, 0, s.bikeZ + tr.z); TRUCK.g.rotation.set(0, tr.yaw, 0);
+  // Lucas: on the seat, or thrown over the truck's cab and turning onto his back
+  LUCAS.g.position.set(s.bikeX, 0.84, s.bikeZ + 0.22); LUCAS.g.rotation.set(0, 0, s.lean);
+  LUCAS.arm1.rotation.set(-0.75, 0, 0.22); LUCAS['arm-1'].rotation.set(-0.75, 0, -0.22);
+  if (s.fly !== null) {
+    const u = s.fly, e = 1 - Math.pow(1 - u, 1.6);
+    LUCAS.g.position.set(s.bikeX - 1.6 * e, 0.84 + 3.4 * Math.sin(Math.PI * Math.pow(u, 0.6)) - 0.6 * u * u * u, s.bikeZ + 0.22 - 10 * e);   // clears the cab (2.7 m)
+    LUCAS.g.rotation.set(1.9 * ss(0, 0.9, u), 0.3 * u, 0.25 * Math.sin(u * 3));   // pitches back to land on the vest
+    const spread = ss(0, 0.35, u);
+    LUCAS.arm1.rotation.set(lerp(-0.75, -2.4, spread), 0, lerp(0.22, 1.1, spread));
+    LUCAS['arm-1'].rotation.set(lerp(-0.75, -2.4, spread), 0, lerp(-0.22, -1.1, spread));
+  }
+  // vest inflation
+  const k = s.inflate;
+  LUCAS.shell.scale.set(1.12 + 0.18 * k, 1 + 0.08 * k, 0.84 + 0.32 * k);
+  LUCAS.collar.scale.set(1 + 0.25 * k, 1 + 0.25 * k, 1 + 1.6 * k); LUCAS.collar.position.y = 0.55 + 0.02 * k;
+  LUCAS.chambers.forEach(c => c.scale.set(1 + 0.9 * k, 1 + 0.25 * k, 1 + 0.9 * k));
+  // X-ray (as in the genre): only the gadget turns into a green hologram, the rider stays solid
+  const xv = clamp(s.xVest), xh = clamp(s.xHelmet);
+  for (const [m, x] of [[MAT.vest, xv], [MAT.helmet, xh]]) { m.opacity = 1 - 0.9 * x; m.depthWrite = x < 0.5; }
+  DUAL.forEach(({ solid, x }) => { const v = solid.material === MAT.helmet ? xh : xv; x.visible = v > 0.01; x.material.uniforms.uK.value = v; });
+  LUCAS.inner.visible = xv > 0.01; LUCAS.trim.visible = xv < 0.5; LUCAS.ductM.uniforms.uK.value = xv;
+  // traffic rolls on (world clock)
+  TRAFFIC.forEach(c => { c.g.position.z = c.z0 - c.v * s.w; });
+  return s;
+}
+
+// ───────────────────────────── camera (style test keys) ─────────────────────────────
+let CAM_OVERRIDE = null;
+function cameraAt(t, s) {
+  const b = V3(s.bikeX, 0, s.bikeZ), rider = b.clone().add(V3(0, 1.25, 0));
+  let pos, tgt, fov = 40, coc = 9, focusAt = rider;
+  if (t < 3.5) { pos = b.clone().add(V3(-0.5, 1.6, 7)); tgt = b.clone().add(V3(1.8, 1.0, -8)); fov = 42; }
+  else if (t < 6.9) { pos = b.clone().add(V3(-2.3, 1.75, -2.6)); tgt = b.clone().add(V3(0.1, 1.05, 0.1)); fov = 38; coc = 12; }
+  else if (t < T_CRASH) {   // slow orbit around the frozen rider
+    const a = lerp(-2.4, -0.4, (t - 6.9) / (T_CRASH - 6.9)), r = 2.7;
+    pos = rider.clone().add(V3(Math.sin(a) * r, 0.55, -Math.cos(a) * r)); tgt = rider.clone().add(V3(0, -0.05, 0)); fov = 36; coc = 12;
+  } else {                 // low, behind the crash: Lucas in the air with the Ángel lit up ahead
+    const L = LUCAS.g.position;
+    pos = V3(L.x - 0.8, 0.6, L.z + 9); tgt = V3(L.x - 0.9, 5.15, L.z - 8); fov = 44; coc = 6; focusAt = L;
+  }
+  return { pos, tgt, fov, coc, focus: pos.distanceTo(focusAt) };
+}
+
+// ───────────────────────────── post: accumulate → DOF → bloom → tone map ─────────────────────────────
+const RT = {};
+const FSQ = new THREE.BufferGeometry(); FSQ.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+const postCam = new THREE.Camera();
+function pass(frag, uniforms, opts = {}) {
+  const m = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3,
+    vertexShader: 'precision highp float;\nin vec3 position; out vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }',
+    fragmentShader: 'precision highp float;\nin vec2 vUv; out vec4 o;\n' + frag, uniforms, depthTest: false, depthWrite: false, ...opts });
+  const msh = new THREE.Mesh(FSQ, m); msh.frustumCulled = false; const sc = new THREE.Scene(); sc.add(msh);
+  return { m, run: (target) => { renderer.setRenderTarget(target); renderer.render(sc, postCam); } };
+}
+function buildPost() {
+  const hf = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
+  RT.scene = new THREE.WebGLRenderTarget(W, HGT, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(W, HGT, THREE.UnsignedIntType) });
+  RT.acc = new THREE.WebGLRenderTarget(W, HGT, hf);
+  RT.half = new THREE.WebGLRenderTarget(W / 2, HGT / 2, hf); RT.dof = new THREE.WebGLRenderTarget(W / 2, HGT / 2, hf);
+  RT.bloom = [4, 8, 16, 32, 64].map(d => new THREE.WebGLRenderTarget(Math.ceil(W / d), Math.ceil(HGT / d), hf));
+  RT.bloomUp = [4, 8, 16, 32].map(d => new THREE.WebGLRenderTarget(Math.ceil(W / d), Math.ceil(HGT / d), hf));
+  RT.accum = pass(`uniform sampler2D uC, uD; uniform float uW, uNear, uFar, uCenter;
+    void main(){ vec3 c=texture(uC,vUv).rgb; float z=texture(uD,vUv).r*2.0-1.0; float lin=2.0*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); o=vec4(c*uW, uCenter*lin); }`,
+    { uC: { value: RT.scene.texture }, uD: { value: RT.scene.depthTexture }, uW: { value: 1 }, uNear: { value: 0.05 }, uFar: { value: 900 }, uCenter: { value: 1 } }, { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor, transparent: true });   // plain sum: alpha carries depth, not opacity
+  RT.coc = pass(`uniform sampler2D uA; uniform vec2 uPx; uniform float uFocus, uK, uMax;
+    float coc(float z){ return clamp(uK*(z-uFocus)/max(z,1e-3), -uMax, uMax); }
+    void main(){ vec2 d=uPx*0.5; vec4 a=texture(uA,vUv+vec2(-d.x,-d.y)), b=texture(uA,vUv+vec2(d.x,-d.y)), c=texture(uA,vUv+vec2(-d.x,d.y)), e=texture(uA,vUv+vec2(d.x,d.y));
+      float zmin=min(min(a.a,b.a),min(c.a,e.a)); o=vec4((a.rgb+b.rgb+c.rgb+e.rgb)*0.25, coc(zmin)*0.5); }`,
+    { uA: { value: RT.acc.texture }, uPx: { value: new THREE.Vector2(1 / W, 1 / HGT) }, uFocus: { value: 3 }, uK: { value: 8 }, uMax: { value: 20 } });
+  RT.gather = pass(`uniform sampler2D uH; uniform vec2 uPx; uniform float uMax; const float GA=2.39996323;
+    void main(){ vec4 cc=texture(uH,vUv); float cs=abs(cc.a); vec3 col=cc.rgb; float tot=1.0; float r=0.5;
+      for(int i=0;i<110;i++){ if(r>uMax) break; float a=float(i)*GA; vec2 tc=vUv+vec2(cos(a),sin(a))*uPx*r; vec4 s=texture(uH,tc); float ssz=abs(s.a);
+        if(s.a>cc.a) ssz=clamp(ssz,0.0,cs*2.0); float m=smoothstep(r-0.5,r+0.5,ssz); col+=mix(col/tot,s.rgb,m); tot+=1.0; r+=1.1/r; }
+      o=vec4(col/tot, cc.a); }`, { uH: { value: RT.half.texture }, uPx: { value: new THREE.Vector2(2 / W, 2 / HGT) }, uMax: { value: 10 } });
+  RT.down = pass(`uniform sampler2D uS; uniform vec2 uPx; uniform float uThr;
+    void main(){ vec2 d=uPx; vec3 c=texture(uS,vUv).rgb*4.0+texture(uS,vUv+vec2(-d.x,-d.y)).rgb+texture(uS,vUv+vec2(d.x,-d.y)).rgb+texture(uS,vUv+vec2(-d.x,d.y)).rgb+texture(uS,vUv+vec2(d.x,d.y)).rgb; c/=8.0;
+      if(uThr>0.0){ float l=max(c.r,max(c.g,c.b)); c*=max(l-uThr,0.0)/max(l,1e-4); } o=vec4(c,1.0); }`, { uS: { value: null }, uPx: { value: new THREE.Vector2() }, uThr: { value: 0 } });
+  RT.up = pass(`uniform sampler2D uS, uB; uniform vec2 uPx;
+    void main(){ vec2 d=uPx; vec3 c=texture(uS,vUv+vec2(-d.x,0)).rgb+texture(uS,vUv+vec2(d.x,0)).rgb+texture(uS,vUv+vec2(0,-d.y)).rgb+texture(uS,vUv+vec2(0,d.y)).rgb; o=vec4(c*0.25+texture(uB,vUv).rgb,1.0); }`,
+    { uS: { value: null }, uB: { value: null }, uPx: { value: new THREE.Vector2() } });
+  RT.final = pass(`uniform sampler2D uA, uDof, uBloom; uniform float uFocus, uK, uMax, uExp, uBloomK, uTime, uGrain;
+    float coc(float z){ return clamp(uK*(z-uFocus)/max(z,1e-3), -uMax, uMax); }
+    vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
+    vec3 toSRGB(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+    float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233))+uTime*17.0)*43758.5453); }
+    void main(){ vec4 a=texture(uA,vUv); float cf=abs(coc(a.a)); vec4 dof=texture(uDof,vUv);
+      vec3 c=mix(a.rgb,dof.rgb,smoothstep(0.6,2.2,max(cf,abs(dof.a)*2.0*step(dof.a,0.0))));
+      c+=texture(uBloom,vUv).rgb*uBloomK; vec2 q=vUv-0.5; c*=1.0-0.55*dot(q*vec2(1.0,0.7),q*vec2(1.0,0.7))*1.6;
+      c=aces(c*uExp); c=toSRGB(c); c+=(h(vUv*vec2(1080.0,1920.0))-0.5)*uGrain; c+=(h(vUv*vec2(1091.0,1931.0)+3.1)-0.5)/255.0; o=vec4(c,1.0); }`,
+    { uA: { value: RT.acc.texture }, uDof: { value: RT.dof.texture }, uBloom: { value: RT.bloomUp[0].texture }, uFocus: { value: 3 }, uK: { value: 8 }, uMax: { value: 20 },
+      uExp: { value: 1 }, uBloomK: { value: 0.09 }, uTime: { value: 0 }, uGrain: { value: 0.02 } });
+}
+let EXPOSURE = 1.0;
+function setScene(t) {
+  const s = applyAll(t);
+  const cam = CAM_OVERRIDE ? (() => { const o = CAM_OVERRIDE; return { pos: V3(o[0], o[1], o[2]), tgt: V3(o[3], o[4], o[5]), fov: o[6], coc: o[7] ?? 4, focus: Math.hypot(o[0] - o[3], o[1] - o[4], o[2] - o[5]) }; })() : cameraAt(t, s);
+  camera.position.copy(cam.pos); camera.fov = cam.fov; camera.updateProjectionMatrix(); camera.lookAt(cam.tgt);
+  // lamp pools near the bike; moon shadow box follows the action
+  const lz = Math.round((s.bikeZ) / 28) * 28;
+  LIGHTS.lamps[0].position.set(ROAD.half - 0.5, 7.6, lz); LIGHTS.lamps[1].position.set(ROAD.half - 0.5, 7.6, lz - 28);
+  LIGHTS.rim.position.set(s.bikeX + 2, 2.5, s.bikeZ - 6);
+  LIGHTS.moon.position.set(s.bikeX - 30, 60, s.bikeZ + 20); LIGHTS.moon.target.position.set(s.bikeX, 0, s.bikeZ);
+  applyStreaks();
+  scene.updateMatrixWorld(true);
+  return cam;
+}
+function renderAt(t) {
+  const n = Math.max(1, SUB);
+  const offs = []; for (let i = 0; i < n; i++) offs.push(n === 1 ? 0 : (i / (n - 1) - 0.5)); offs.sort((a, b) => Math.abs(b) - Math.abs(a));
+  const jit = [[0, 0], [0.25, -0.25], [-0.25, 0.25], [0.375, 0.125], [-0.125, -0.375]];
+  renderer.setRenderTarget(RT.acc); renderer.setClearColor(0x000000, 0); renderer.clear();
+  let cam;
+  offs.forEach((o, i) => {
+    cam = setScene(t + o * SHUTTER / FPS);
+    const [jx, jy] = n > 1 ? jit[i % jit.length] : [0, 0];
+    camera.setViewOffset(W, HGT, jx, jy, W, HGT);
+    renderer.setRenderTarget(RT.scene); renderer.setClearColor(0x000000, 1); renderer.render(scene, camera); camera.clearViewOffset();
+    const u = RT.accum.m.uniforms; u.uW.value = 1 / n; u.uNear.value = camera.near; u.uFar.value = camera.far; u.uCenter.value = i === n - 1 ? 1 : 0; RT.accum.run(RT.acc);
+  });
+  cam = setScene(t);
+  for (const pp of [RT.coc.m, RT.final.m]) { pp.uniforms.uFocus.value = cam.focus; pp.uniforms.uK.value = cam.coc; }
+  RT.coc.run(RT.half); RT.gather.m.uniforms.uMax.value = Math.min(cam.coc * 0.5 + 1, 11); RT.gather.run(RT.dof);
+  RT.bloom.forEach((rt, i) => { const u = RT.down.m.uniforms; u.uS.value = i === 0 ? RT.acc.texture : RT.bloom[i - 1].texture; u.uPx.value.set(1 / rt.width, 1 / rt.height); u.uThr.value = i === 0 ? 1.2 : 0; RT.down.run(rt); });
+  for (let i = RT.bloomUp.length - 1; i >= 0; i--) { const u = RT.up.m.uniforms; u.uS.value = i === RT.bloomUp.length - 1 ? RT.bloom[i + 1].texture : RT.bloomUp[i + 1].texture; u.uB.value = RT.bloom[i].texture; u.uPx.value.set(1 / RT.bloomUp[i].width, 1 / RT.bloomUp[i].height); RT.up.run(RT.bloomUp[i]); }
+  const f = RT.final.m.uniforms; f.uExp.value = EXPOSURE; f.uTime.value = t; RT.final.run(null);
+}
+
+// ───────────────────────────── boot ─────────────────────────────
+buildCity(); buildBike(); buildLucas(); buildTruck(); buildLights(); buildStreaks();
+{ // environment for reflections: the street itself, captured once
+  const crt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+  const cc = new THREE.CubeCamera(0.5, 800, crt); cc.position.set(0, 3, PATH.z0 - 40); scene.add(cc);
+  setScene(1.5); cc.update(renderer, scene); scene.remove(cc);
+  const pm = new THREE.PMREMGenerator(renderer); const env = pm.fromCubemap(crt.texture).texture;
+  scene.environment = env;
+}
+buildPost();
+window.renderAt = renderAt; window.duration = 35.5; window.fps = FPS; window.W = W; window.H = HGT;
+window.__dbg = { scene, get STREAKS() { return STREAKS; }, LIGHTS };
+window.qa = { setSub: (n) => SUB = n, setCam: (c) => CAM_OVERRIDE = c, setExposure: (e) => EXPOSURE = e,
+  // luminance stats of the HDR frame (before tone mapping), with parts switched off, to find what blows out
+  stats: (t, off = []) => {
+    const saved = off.map(k => { const o = k === 'env' ? null : (k === 'bloom' ? null : LIGHTS[k] || null); return o; });
+    const env = scene.environment; if (off.includes('env')) scene.environment = null;
+    const bk = RT.final.m.uniforms.uBloomK.value; if (off.includes('bloom')) RT.final.m.uniforms.uBloomK.value = 0;
+    const vis = []; for (const k of off) { if (LIGHTS[k]) { const L = Array.isArray(LIGHTS[k]) ? LIGHTS[k] : [LIGHTS[k]]; L.forEach(l => { vis.push([l, l.visible]); l.visible = false; }); } }
+    renderAt(t);
+    const buf = new Uint16Array(W * HGT * 4); renderer.readRenderTargetPixels(RT.acc, 0, 0, W, HGT, buf);
+    const f16 = (h) => { const s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 31, m = h & 1023; return e === 0 ? s * 6.1e-5 * (m / 1024) : e === 31 ? 65504 : s * Math.pow(2, e - 15) * (1 + m / 1024); };
+    const L = []; for (let i = 0; i < buf.length; i += 4 * 97) L.push(0.2126 * f16(buf[i]) + 0.7152 * f16(buf[i + 1]) + 0.0722 * f16(buf[i + 2]));
+    L.sort((a, b) => a - b);
+    scene.environment = env; RT.final.m.uniforms.uBloomK.value = bk; vis.forEach(([l, v]) => l.visible = v);
+    return { p10: +L[L.length * 0.1 | 0].toFixed(3), p50: +L[L.length * 0.5 | 0].toFixed(3), p90: +L[L.length * 0.9 | 0].toFixed(3), p99: +L[L.length * 0.99 | 0].toFixed(2), max: +L[L.length - 1].toFixed(1) };
+  } };
+window.ready = true;
+const tq = Q.get('t'); if (tq !== null) renderAt(+tq); else if (!Q.has('render')) renderAt(1.0);
+</script>
+</body>
+</html>
