@@ -1,0 +1,1852 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three coins. One plush.</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+  canvas { position: absolute; inset: 0; margin: auto; width: 100vw; height: 56.25vw; max-height: 100vh; max-width: 177.78vh; }
+  #play { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; cursor: pointer;
+          color: #F3E6CF; font: 600 18px/1.4 ui-monospace, Menlo, monospace; letter-spacing: .08em; background: rgba(0,0,0,.45); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+} }
+</script>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div id="play" hidden>BAKING PHYSICS…</div>
+<script type="module">
+// Three coins. One plush. — a 20 s character film, one HTML file.
+// Every frame is a pure function of time: renderAt(t) samples a seeded cannon-es bake
+// that runs once at load. ?t=12.2 draws a single time and stops; ?sub=N averages N
+// sub-frames per frame (motion blur + anti-aliasing) for the offline render.
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+
+const Q = new URLSearchParams(location.search);
+const W = 1920, HGT = 1080, FPS = 60, DUR = 20;
+let SUB = +(Q.get('sub') ?? 1);
+const SHUTTER = 0.45;                         // fraction of a frame the shutter is open
+
+// ───────────────────────────── utilities ─────────────────────────────
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, u) => a + (b - a) * u;
+const ss = (a, b, x) => { const u = clamp((x - a) / (b - a)); return u * u * (3 - 2 * u); };
+const sm = (a, b, x) => { const u = clamp((x - a) / (b - a)); return u * u * u * (u * (u * 6 - 15) + 10); };
+const win = (t, a, b, c, d) => ss(a, b, t) * (1 - ss(c, d, t));
+const ring = (t, t0, f, d) => t < t0 ? 0 : Math.exp(-d * (t - t0)) * Math.sin(2 * Math.PI * f * (t - t0));
+const backOut = (u, s = 1.6) => { u = clamp(u) - 1; return u * u * ((s + 1) * u + s) + 1; };
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+function rng(seed) { return () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+
+// Time spline: monotone cubic Hermite per dimension, so holds stay still and nothing overshoots.
+function spline(keys) {
+  const n = keys.length, T = keys.map(k => k[0]), V = keys.map(k => k.slice(1)), D = V[0].length;
+  const M = V.map((v, i) => v.map((_, d) => {
+    if (i === 0 || i === n - 1) return 0;
+    const a = (V[i][d] - V[i - 1][d]) / (T[i] - T[i - 1]), b = (V[i + 1][d] - V[i][d]) / (T[i + 1] - T[i]);
+    if (a * b <= 0) return 0;
+    return 3 * (T[i + 1] - T[i - 1]) / ((2 * T[i + 1] - T[i] - T[i - 1]) / a + (T[i + 1] + T[i] - 2 * T[i - 1]) / b);
+  }));
+  return (t) => {
+    if (t <= T[0]) return V[0].slice();
+    if (t >= T[n - 1]) return V[n - 1].slice();
+    let i = 0; while (t > T[i + 1]) i++;
+    const h = T[i + 1] - T[i], u = (t - T[i]) / h, u2 = u * u, u3 = u2 * u;
+    const a = 2 * u3 - 3 * u2 + 1, b = u3 - 2 * u2 + u, c = -2 * u3 + 3 * u2, e = u3 - u2;
+    const out = new Array(D);
+    for (let d = 0; d < D; d++) out[d] = a * V[i][d] + b * h * M[i][d] + c * V[i + 1][d] + e * h * M[i + 1][d];
+    return out;
+  };
+}
+
+// ───────────────────────────── palette & brand ─────────────────────────────
+// BRAND: hero D97757, prizes in F3E6CF 8DBFAF F2C14E E8A6B4 7FA7D9 + one orange, teal cabinet 1F6F6B.
+const PAL = { hero: 0xD97757, cream: 0xF3E6CF, sage: 0x8DBFAF, yellow: 0xF2C14E, pink: 0xE8A6B4, blue: 0x7FA7D9, teal: 0x1F6F6B, eye: 0x0F0F0F };
+const H = 0.035;           // one hero pixel (m)
+const P = 0.36 * H;        // one plush pixel
+const PILLOW = 0.35;        // how much a plush bulges front/back
+
+// ───────────────────────────── voxel geometry ─────────────────────────────
+// Chamfered cubes, emitting only faces/edges/corners that touch air, so neighbours
+// read as separate soft blocks with a groove between them.
+function voxGeo(cells, s, bev, origin = [0, 0, 0], deform = null) {
+  const key = (i, j, k) => ((i + 256) * 512 + (j + 256)) * 512 + (k + 256);
+  const S = new Set(cells.map(([i, j, k]) => key(i, j, k)));
+  const pos = [], h = s / 2, e = h - bev;
+  const emit = (pts, n) => {
+    const [a, b, c] = pts;
+    const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+    if ((uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] < 0) pts = pts.slice().reverse();
+    if (pts.length === 3) pos.push(...pts[0], ...pts[1], ...pts[2]);
+    else pos.push(...pts[0], ...pts[1], ...pts[2], ...pts[0], ...pts[2], ...pts[3]);
+  };
+  for (const ijk of cells) {
+    const c = [origin[0] + (ijk[0] + .5) * s, origin[1] + (ijk[1] + .5) * s, origin[2] + (ijk[2] + .5) * s];
+    const nb = (ax, sg) => { const q = ijk.slice(); q[ax] += sg; return S.has(key(q[0], q[1], q[2])); };
+    const nb2 = (a1, s1, a2, s2) => { const q = ijk.slice(); q[a1] += s1; q[a2] += s2; return S.has(key(q[0], q[1], q[2])); };
+    const Vt = (a) => [c[0] + a[0], c[1] + a[1], c[2] + a[2]];
+    // a voxel on a concave edge is emitted whole so the inside corner stays closed
+    let full = false;
+    for (let a1 = 0; a1 < 3; a1++) for (let a2 = a1 + 1; a2 < 3; a2++) for (const s1 of [-1, 1]) for (const s2 of [-1, 1])
+      if (nb(a1, s1) && nb(a2, s2) && !nb2(a1, s1, a2, s2)) full = true;
+    for (let ax = 0; ax < 3; ax++) for (const sg of [-1, 1]) {
+      if (!full && nb(ax, sg)) continue;
+      const a1 = (ax + 1) % 3, a2 = (ax + 2) % 3, pts = [];
+      for (const [p, q] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const v = [0, 0, 0]; v[ax] = sg * h; v[a1] = p * e; v[a2] = q * e; pts.push(Vt(v)); }
+      const n = [0, 0, 0]; n[ax] = sg; emit(pts, n);
+    }
+    for (let ax1 = 0; ax1 < 3; ax1++) for (let ax2 = ax1 + 1; ax2 < 3; ax2++) {
+      const ax3 = 3 - ax1 - ax2;
+      for (const s1 of [-1, 1]) for (const s2 of [-1, 1]) {
+        if (!full && nb(ax1, s1) && nb(ax2, s2)) continue;
+        const pts = [];
+        for (const [w, t3] of [[0, -1], [0, 1], [1, 1], [1, -1]]) {
+          const v = [0, 0, 0]; v[ax3] = t3 * e;
+          if (w === 0) { v[ax1] = s1 * h; v[ax2] = s2 * e; } else { v[ax1] = s1 * e; v[ax2] = s2 * h; }
+          pts.push(Vt(v));
+        }
+        const n = [0, 0, 0]; n[ax1] = s1; n[ax2] = s2; emit(pts, n);
+      }
+    }
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) {
+      const sg = [sx, sy, sz];
+      // fill the little diamond where four grooves meet on a flat face
+      for (let a = 0; a < 3; a++) {
+        const b = (a + 1) % 3, cc = (a + 2) % 3;
+        if (nb(a, sg[a]) || !nb(b, sg[b]) || !nb(cc, sg[cc]) || !nb2(b, sg[b], cc, sg[cc])) continue;
+        const v1 = [0, 0, 0], v2 = [0, 0, 0], v3 = [0, 0, 0];
+        v1[a] = v2[a] = v3[a] = sg[a] * e;
+        v1[b] = sg[b] * h; v1[cc] = sg[cc] * e; v2[b] = sg[b] * e; v2[cc] = sg[cc] * h; v3[b] = sg[b] * h; v3[cc] = sg[cc] * h;
+        const n = [0, 0, 0]; n[a] = sg[a]; emit([Vt(v1), Vt(v2), Vt(v3)], n);
+      }
+      if (!full && nb(0, sx) && nb(1, sy) && nb(2, sz)) continue;
+      const pts = [];
+      for (let ax = 0; ax < 3; ax++) { const v = [sx * e, sy * e, sz * e]; v[ax] = sg[ax] * h; pts.push(Vt(v)); }
+      emit(pts, sg);
+    }
+  }
+  if (deform) for (let i = 0; i < pos.length; i += 3) { const p = deform(pos[i], pos[i + 1], pos[i + 2]); pos[i] = p[0]; pos[i + 1] = p[1]; pos[i + 2] = p[2]; }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.computeVertexNormals(); g.computeBoundingBox();
+  return g;
+}
+
+// The mascot as a 20×13 pixel grid: body 14×10 at (3,0), arms 3×2 at (0,5) and (17,5),
+// legs 2×3 at x 4,7,11,14 on row 10, eyes 2×3 at (6,3) and (12,3). Column c → i=c-10, row r → j=12-r.
+function mascotCells(dBody, dLimb, extraTop = 0) {
+  const out = { body: [], armA: [], armB: [], legs: [[], [], [], []] };
+  const kb = -dBody / 2, kl = -dLimb / 2;
+  for (let r = 0; r <= 9; r++) for (let c = 3; c <= 16; c++) for (let k = 0; k < dBody; k++) out.body.push([c - 10, 12 - r, kb + k]);
+  for (let r = 5; r <= 6; r++) for (let k = 0; k < dLimb; k++) {
+    for (let c = 0; c <= 2; c++) out.armA.push([c - 10, 12 - r, kl + k]);
+    for (let c = 17; c <= 19; c++) out.armB.push([c - 10, 12 - r, kl + k]);
+  }
+  [[4, 5], [7, 8], [11, 12], [14, 15]].forEach((cs, li) => {
+    for (let r = 10; r <= 12; r++) for (const c of cs) for (let k = 0; k < dLimb; k++) out.legs[li].push([c - 10, 12 - r, kl + k]);
+  });
+  return out;
+}
+
+// ───────────────────────────── renderer & targets ─────────────────────────────
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1); renderer.setSize(W, HGT, false);
+renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.autoClear = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+const camera = new THREE.PerspectiveCamera(38, W / HGT, 0.012, 40);
+
+const std = (color, rough = 0.6, metal = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
+const basic = (r, g, b) => new THREE.MeshBasicMaterial({ color: new THREE.Color(r, g, b) });
+const hdr = (hex, k) => { const c = new THREE.Color(hex); return new THREE.MeshBasicMaterial({ color: new THREE.Color(c.r * k, c.g * k, c.b * k) }); };
+
+// Shadow-only registry for QA: every solid gets an oriented box.
+const SOLIDS = [];
+function addSolid(name, obj, box, kind) { SOLIDS.push({ name, obj, box, kind }); }
+
+// ───────────────────────────── room & arcade ─────────────────────────────
+function canvasTex(w, h, draw, nearest = false) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  draw(cv.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+  if (nearest) { t.magFilter = THREE.NearestFilter; t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; }
+  else t.anisotropy = 4;
+  return t;
+}
+const hexs = ['#D97757', '#F3E6CF', '#8DBFAF', '#F2C14E', '#E8A6B4', '#7FA7D9'];
+
+function buildRoom() {
+  const R = rng(7);
+  const carpet = canvasTex(1024, 1024, (g, w, h) => {
+    g.fillStyle = '#10142a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 520; i++) {
+      g.save(); g.translate(R() * w, R() * h); g.rotate(R() * 6.3);
+      g.fillStyle = ['#1f6f6b', '#3b2a5c', '#7FA7D9', '#E8A6B4', '#F2C14E', '#8DBFAF'][Math.floor(R() * 6)];
+      g.globalAlpha = 0.35 + R() * 0.35;
+      const k = R(); const s = 8 + R() * 18;
+      if (k < .35) g.fillRect(-s / 2, -s / 6, s, s / 3);
+      else if (k < .65) { g.beginPath(); g.moveTo(0, -s / 2); g.lineTo(s / 2, s / 2); g.lineTo(-s / 2, s / 2); g.fill(); }
+      else { g.beginPath(); g.arc(0, 0, s / 3, 0, 6.3); g.fill(); }
+      g.restore();
+    }
+  });
+  carpet.wrapS = carpet.wrapT = THREE.RepeatWrapping; carpet.repeat.set(5, 5);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), std(0xffffff, 0.94, 0, { map: carpet }));
+  floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  addSolid('floor', floor, new THREE.Box3(V3(-8, -8, -0.2), V3(8, 8, 0)), 'static');
+
+  const wallM = std(0x1a1526, 0.9);
+  for (const [x, z, ry] of [[0, -5.5, 0], [0, 5.5, Math.PI], [-5.5, 0, Math.PI / 2], [5.5, 0, -Math.PI / 2]]) {
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(11, 3.4), wallM); wall.position.set(x, 1.7, z); wall.rotation.y = ry; scene.add(wall);
+  }
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), std(0x07060a, 1)); ceil.position.y = 3.4; ceil.rotation.x = Math.PI / 2; scene.add(ceil);
+  // neon strips along the walls
+  const neon = [[0x7FA7D9, 3.5], [0xE8A6B4, 3.2], [0x8DBFAF, 3.0], [0xF2C14E, 2.6]];
+  [[0, -5.45, 0], [0, 5.45, 0], [-5.45, 0, Math.PI / 2], [5.45, 0, Math.PI / 2]].forEach(([x, z, ry], i) => {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.035, 0.035), hdr(neon[i][0], neon[i][1]));
+    m.position.set(x, 2.55, z); m.rotation.y = ry; scene.add(m);
+    const m2 = m.clone(); m2.position.y = 0.32; m2.material = hdr(neon[(i + 2) % 4][0], 1.6); scene.add(m2);
+  });
+  // ceiling light panels (soft overhead blobs for the bokeh)
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.5), hdr(0xfff1dc, 2.2));
+    m.position.set(-4 + (i % 5) * 2, 3.38, i < 5 ? -1.6 : 2.4); scene.add(m);
+  }
+  // arcade cabinets all around
+  const spots = [
+    [-2.3, -2.6, 0.25], [-1.25, -2.9, 0.08], [1.2, -2.9, -0.08], [2.3, -2.5, -0.3], [0.0, -3.4, 0],
+    [-3.3, -0.6, 1.2], [3.3, -0.3, -1.25], [-3.2, 1.4, 1.7], [3.2, 1.6, -1.8],
+    [-2.0, 3.3, Math.PI - 0.3], [-0.6, 3.6, Math.PI - 0.06], [0.9, 3.5, Math.PI + 0.1], [2.2, 3.1, Math.PI + 0.35],
+  ];
+  spots.forEach(([x, z, ry], i) => scene.add(arcadeCab(x, z, ry, i)));
+}
+
+function arcadeCab(x, z, ry, i) {
+  const R = rng(100 + i);
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.78, 1.66, 0.74), std([0x1b1f33, 0x231a30, 0x16232b][i % 3], 0.55));
+  body.position.y = 0.83; g.add(body);
+  const scr = canvasTex(64, 48, (c, w, h) => {
+    c.fillStyle = '#05070c'; c.fillRect(0, 0, w, h);
+    for (let n = 0; n < 70; n++) { c.fillStyle = hexs[Math.floor(R() * 6)]; const s = 2 + Math.floor(R() * 5); c.fillRect(Math.floor(R() * w), Math.floor(R() * h), s, s); }
+  }, true);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.6, 0.46), new THREE.MeshBasicMaterial({ map: scr, color: new THREE.Color(2.4, 2.4, 2.4) }));
+  screen.position.set(0, 1.27, 0.372); screen.rotation.x = -0.16; g.add(screen);
+  const mq = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.22, 0.2), hdr(['#F2C14E', '#8DBFAF', '#E8A6B4', '#7FA7D9'][i % 4], 2.6));
+  mq.position.set(0, 1.77, 0.28); g.add(mq);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.34), std(0x2a2f45, 0.5));
+  deck.position.set(0, 0.98, 0.47); deck.rotation.x = 0.2; g.add(deck);
+  for (let b = 0; b < 4; b++) {
+    const btn = new THREE.Mesh(new THREE.SphereGeometry(0.022, 10, 8), hdr(hexs[(b + i) % 6], 4));
+    btn.position.set(-0.18 + b * 0.12, 1.02, 0.5); g.add(btn);
+  }
+  for (const sx of [-1, 1]) {
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.015, 1.5, 0.015), hdr(hexs[(i + 2) % 6], 3));
+    st.position.set(sx * 0.395, 0.85, 0.375); g.add(st);
+  }
+  g.position.set(x, 0, z); g.rotation.y = ry;
+  return g;
+}
+
+// ───────────────────────────── the claw machine ─────────────────────────────
+const MC = {
+  hw: 0.65, zf: 0.45, zb: -0.50, pf: 0.75, gTop: 1.65, boxTop: 1.85, mq0: 1.86, mq1: 2.18,
+  ix0: -0.60, ix1: 0.60, iz0: -0.45, iz1: 0.416, glassZ: 0.42,
+  chX0: -0.60, chX1: -0.18, chZ0: 0.0, rail: 0.955, gantryY: 1.60,
+  flX0: -0.58, flX1: -0.20, flY0: 0.05, flY1: 0.40,
+  panelZ1: 0.60,
+};
+// the hero stands on a tall step stool so its face clears the pile; the controls sit right under its stubby arms
+const HERO0 = { x: 0.20, y: 0.86, z: MC.panelZ1 + 0.01 + 3 * H };
+MC.panelY1 = HERO0.y + 6 * H - 0.156; MC.panelY0 = MC.panelY1 - 0.04; MC.panelX0 = HERO0.x - 0.32; MC.panelX1 = HERO0.x + 0.36;
+const JOY = V3(HERO0.x + 8.5 * H, MC.panelY1, HERO0.z - 4.3 * H), BTN = V3(HERO0.x - 8.5 * H, MC.panelY1, HERO0.z - 4.3 * H);
+const SLOT = V3(HERO0.x, MC.panelY1 + 0.085, 0.50), STACK = V3(HERO0.x - 4 * H, MC.panelY1, HERO0.z - 4.6 * H);
+const FLAP_HINGE = { y: 0.40, z: 0.437 };
+
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.81, 0) });
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.solver.iterations = 24; world.solver.tolerance = 1e-4;
+world.allowSleep = true;
+const G = { STATIC: 1, PLUSH: 2, STORY: 4, CLAW: 8, KEEP: 16, KEEPF: 32 };
+const physMat = new CANNON.Material('m');
+world.addContactMaterial(new CANNON.ContactMaterial(physMat, physMat, { friction: 0.6, restitution: 0.04, contactEquationStiffness: 1e7, contactEquationRelaxation: 3 }));
+world.defaultContactMaterial.friction = 0.6; world.defaultContactMaterial.restitution = 0.04;
+
+function staticBox(x0, x1, y0, y1, z0, z1, group = G.STATIC, mask = G.PLUSH | G.STORY, rot = null) {
+  const b = new CANNON.Body({ mass: 0, type: CANNON.Body.STATIC, material: physMat, collisionFilterGroup: group, collisionFilterMask: mask });
+  b.addShape(new CANNON.Box(new CANNON.Vec3((x1 - x0) / 2, (y1 - y0) / 2, (z1 - z0) / 2)));
+  b.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+  if (rot) b.quaternion.setFromEuler(rot[0], rot[1], rot[2]);
+  world.addBody(b); return b;
+}
+// Visible solid box + physics + QA box in one call.
+function block(name, x0, x1, y0, y1, z0, z1, mat, { phys = true, vis = true, qa = true, shadow = true, parent = scene } = {}) {
+  let m = null;
+  if (vis) {
+    m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0), mat);
+    m.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    m.castShadow = shadow; m.receiveShadow = true; parent.add(m);
+  }
+  if (phys) staticBox(x0, x1, y0, y1, z0, z1);
+  if (qa) {
+    const o = m || new THREE.Object3D(); if (!m) { o.position.set((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); scene.add(o); }
+    const hx = (x1 - x0) / 2, hy = (y1 - y0) / 2, hz = (z1 - z0) / 2;
+    addSolid(name, o, new THREE.Box3(V3(-hx, -hy, -hz), V3(hx, hy, hz)), 'static');
+  }
+  return m;
+}
+
+const MAT = {};
+function buildMachine() {
+  MAT.teal = std(PAL.teal, 0.42, 0.05);
+  MAT.tealDark = std(0x123f3d, 0.6);
+  MAT.cream = std(PAL.cream, 0.45);
+  MAT.inside = std(0x0b1d1c, 0.85);
+  MAT.chrome = std(0xffffff, 0.12, 1.0);
+  MAT.chromeSoft = std(0xdddddd, 0.28, 1.0);
+  MAT.acrylic = new THREE.MeshStandardMaterial({ color: 0xdff3ef, roughness: 0.08, transparent: true, opacity: 0.28, depthWrite: false });
+  MAT.floorIn = std(0x174c49, 0.8);
+  const { hw, zf, zb, pf } = MC;
+  // base: solid blocks, hollow chute shaft and prize bin at front-left
+  block('cab-left', -hw, -0.62, 0, pf, zb, zf, MAT.teal);
+  block('cab-right', -0.18, hw, 0, pf, zb, zf - 0.0001, MAT.teal);
+  block('cab-back', -0.62, -0.18, 0, pf, zb, 0.0, MAT.teal);
+  block('front-low', -0.62, -0.18, 0, MC.flY0, 0.42, zf, MAT.teal);
+  block('front-high', -0.62, -0.18, MC.flY1, pf, 0.42, zf, MAT.teal);
+  block('front-l', -0.62, MC.flX0, MC.flY0, MC.flY1, 0.42, zf, MAT.teal);
+  block('front-r', MC.flX1, -0.18, MC.flY0, MC.flY1, 0.42, zf, MAT.teal);
+  // prize bin floor slopes to the flap
+  const slope = Math.atan2(0.11, 0.42);
+  const bin = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.03, 0.46), MAT.inside);
+  bin.position.set(-0.40, 0.095, 0.205); bin.rotation.x = slope; bin.receiveShadow = true; scene.add(bin);
+  { const b = staticBox(-0.62, -0.18, 0.0, 0.11, -0.025, 0.435, G.STATIC, G.PLUSH | G.STORY, [slope, 0, 0]); b.position.set(-0.40, 0.095 - 0.04 * Math.cos(slope), 0.205 - 0.04 * Math.sin(slope)); }   // thick below its top so a falling prize can't sink in
+  addSolid('bin', bin, new THREE.Box3(V3(-0.22, -0.015, -0.23), V3(0.22, 0.015, 0.23)), 'static');
+  // flap (hinged at its top edge, swings inward over the prize)
+  const flapPivot = new THREE.Group(); flapPivot.position.set(-0.39, FLAP_HINGE.y, FLAP_HINGE.z); scene.add(flapPivot);
+  const flap = new THREE.Mesh(new THREE.BoxGeometry(0.375, 0.345, 0.012), std(0x2a2f33, 0.25, 0.3, { transparent: true, opacity: 0.82 }));
+  flap.position.y = -0.1725; flap.castShadow = true; flapPivot.add(flap);
+  const flapTrim = new THREE.Mesh(new THREE.BoxGeometry(0.39, 0.02, 0.02), MAT.chrome); flapTrim.position.y = 0; flapPivot.add(flapTrim);
+  staticBox(MC.flX0, MC.flX1, MC.flY0, MC.flY1, 0.43, 0.445);
+  addSolid('flap', flap, new THREE.Box3(V3(-0.1875, -0.1725, -0.006), V3(0.1875, 0.1725, 0.006)), 'flap');
+  MACH.flapPivot = flapPivot;
+  // flap surround (cream frame)
+  for (const [x0, x1, y0, y1] of [[-0.60, -0.58, 0.03, 0.42], [-0.20, -0.18, 0.03, 0.42], [-0.60, -0.18, 0.03, 0.05], [-0.60, -0.18, 0.40, 0.42]])
+    block('flap-frame', x0, x1, y0, y1, zf, zf + 0.012, MAT.cream, { phys: false });
+  // cream base trim
+  block('kick', -hw - 0.005, hw + 0.005, 0, 0.035, zb - 0.005, zf + 0.008, MAT.cream, { phys: false, qa: false });
+  for (const [x0, x1, z0, z1] of [[-hw - 0.012, hw + 0.012, zf, zf + 0.012], [-hw - 0.012, hw + 0.012, zb - 0.012, zb], [-hw - 0.012, -hw, zb, zf], [hw, hw + 0.012, zb, zf]])
+    block('waist', x0, x1, pf - 0.03, pf + 0.03, z0, z1, MAT.cream, { phys: false });
+  // playfield floor (hole for the chute)
+  block('pf-a', -0.18, 0.60, pf - 0.02, pf, -0.45, 0.416, MAT.floorIn);
+  block('pf-b', -0.60, -0.18, pf - 0.02, pf, -0.45, 0.0, MAT.floorIn);
+  // corner posts + top box
+  for (const [x, z] of [[-0.625, 0.425], [0.625, 0.425], [-0.625, -0.475], [0.625, -0.475]])
+    block('post', x - 0.025, x + 0.025, pf, MC.gTop, z - 0.025, z + 0.025, MAT.cream, { phys: false });
+  block('topbox', -hw, hw, MC.gTop, MC.boxTop, zb, zf, MAT.teal, { phys: false });
+  block('topbox-trim', -hw - 0.01, hw + 0.01, MC.gTop - 0.02, MC.gTop + 0.025, zb - 0.01, zf + 0.01, MAT.cream, { phys: false });
+  block('glass-top-rail', -0.60, 0.60, MC.gTop - 0.035, MC.gTop, 0.41, 0.45, MAT.cream, { phys: false });
+  block('glass-low-rail', -0.60, 0.60, pf, pf + 0.03, 0.424, 0.45, MAT.cream, { phys: false });
+  // backboard art
+  const art = canvasTex(512, 384, (g, w, h) => {
+    g.fillStyle = '#F3E6CF'; g.fillRect(0, 0, w, h);
+    const R = rng(3);
+    for (let y = 0; y < h; y += 32) for (let x = (y / 32 % 2) * 16; x < w; x += 32) { g.fillStyle = R() < .5 ? '#8DBFAF' : '#e9dcc4'; g.fillRect(x, y, 16, 16); }
+    g.fillStyle = 'rgba(31,111,107,.85)'; g.fillRect(0, h * 0.72, w, h * 0.28);
+  }, true);
+  block('backboard', -0.60, 0.60, pf, MC.gTop, -0.475, -0.45, std(0xffffff, 0.7, 0, { map: art }));
+  // marquee
+  const mq = block('marquee', -0.62, 0.62, MC.mq0, MC.mq1, 0.39, 0.47, std(0x0e2b2a, 0.5), { phys: false });
+  const mqFace = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.26), new THREE.MeshBasicMaterial({ color: new THREE.Color(0.08, 0.3, 0.28) }));
+  mqFace.position.set(0, (MC.mq0 + MC.mq1) / 2, 0.4705); scene.add(mqFace); MACH.mqFace = mqFace;
+  // pixel letters CLAW
+  const FONT = {
+    C: ['.###.', '#...#', '#....', '#....', '#....', '#...#', '.###.'],
+    L: ['#....', '#....', '#....', '#....', '#....', '#....', '#####'],
+    A: ['.###.', '#...#', '#...#', '#####', '#...#', '#...#', '#...#'],
+    W: ['#...#', '#...#', '#...#', '#.#.#', '#.#.#', '##.##', '#...#'],
+  };
+  const cells = []; const LS = 0.026;
+  'CLAW'.split('').forEach((ch, li) => FONT[ch].forEach((row, r) => row.split('').forEach((v, c) => { if (v === '#') cells.push([li * 6 + c, 6 - r, 0]); })));
+  const letters = new THREE.Mesh(voxGeo(cells, LS, LS * 0.14, [-(23 * LS) / 2, 0, 0]), new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 3.4, 2.4) }));
+  letters.position.set(0, (MC.mq0 + MC.mq1) / 2 - 3.5 * LS, 0.472); scene.add(letters); MACH.letters = letters;
+  // bulb frame around the marquee
+  const bulbs = []; const bx0 = -0.6, bx1 = 0.6, by0 = MC.mq0 + 0.02, by1 = MC.mq1 - 0.02;
+  const per = 2 * (bx1 - bx0) + 2 * (by1 - by0); const NB = 38;
+  for (let i = 0; i < NB; i++) {
+    let d = (i / NB) * per, x, y;
+    if (d < bx1 - bx0) { x = bx0 + d; y = by0; } else if ((d -= bx1 - bx0) < by1 - by0) { x = bx1; y = by0 + d; }
+    else if ((d -= by1 - by0) < bx1 - bx0) { x = bx1 - d; y = by1; } else { d -= bx1 - bx0; x = bx0; y = by1 - d; }
+    bulbs.push([x, y]);
+  }
+  // bulbs along the glass front posts too
+  for (let i = 0; i < 9; i++) { const y = MC.pf + 0.08 + i * 0.095; bulbs.push([-0.625, y, 0.452]); bulbs.push([0.625, y, 0.452]); }
+  const bulbMesh = new THREE.InstancedMesh(new THREE.SphereGeometry(0.0145, 12, 8), new THREE.MeshBasicMaterial({ color: 0xffffff }), bulbs.length);
+  const sock = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.019, 0.019, 0.012, 12), MAT.cream, bulbs.length);
+  const o = new THREE.Object3D();
+  bulbs.forEach((b, i) => {
+    o.position.set(b[0], b[1], (b[2] ?? 0.478) + 0.006); o.rotation.set(0, 0, 0); o.updateMatrix(); bulbMesh.setMatrixAt(i, o.matrix);
+    o.position.z -= 0.008; o.rotation.set(Math.PI / 2, 0, 0); o.updateMatrix(); sock.setMatrixAt(i, o.matrix);
+    bulbMesh.setColorAt(i, new THREE.Color(1, 1, 1));
+  });
+  scene.add(bulbMesh, sock); MACH.bulbs = bulbMesh; MACH.bulbPos = bulbs; MACH.nMarquee = NB;
+  // control panel + controls
+  block('panel', MC.panelX0, MC.panelX1, MC.panelY0, MC.panelY1, zf, MC.panelZ1, MAT.cream, { phys: false });
+  block('panel-face', MC.panelX0, MC.panelX1, MC.panelY0 - 0.012, MC.panelY0, zf, MC.panelZ1 + 0.004, MAT.teal, { phys: false });
+  block('front-band', -hw, hw, pf + 0.03, MC.panelY0 - 0.012, zf - 0.02, zf, MAT.teal, { phys: false });
+  // bracket under the right of the panel
+  const br = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.2), MAT.tealDark);
+  br.position.set(MC.panelX1 - 0.05, MC.panelY0 - 0.1, 0.52); br.rotation.x = -0.55; br.castShadow = true; scene.add(br);
+  // joystick
+  const joyBase = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.036, 0.012, 20), MAT.chrome);
+  joyBase.position.copy(JOY).add(V3(0, 0.006, 0)); scene.add(joyBase);
+  const joyPivot = new THREE.Group(); joyPivot.position.copy(JOY).add(V3(0, 0.012, 0)); scene.add(joyPivot);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.0065, 0.0065, 0.10, 12), MAT.chrome); shaft.position.y = 0.05; joyPivot.add(shaft);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.022, 20, 14), std(PAL.pink, 0.28)); ball.position.y = 0.122; joyPivot.add(ball);
+  ball.castShadow = shaft.castShadow = true;
+  addSolid('joystick', ball, new THREE.Box3(V3(-0.02, -0.02, -0.02), V3(0.02, 0.02, 0.02)), 'prop');
+  MACH.joyPivot = joyPivot; MACH.joyBall = ball;
+  // button
+  const hous = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.123, 20), MAT.teal); hous.position.copy(BTN).add(V3(0, 0.0615, 0)); hous.castShadow = true; scene.add(hous);
+  const ringM = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.007, 20), MAT.cream); ringM.position.copy(BTN).add(V3(0, 0.124, 0)); scene.add(ringM);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.024, 0.02, 20), std(PAL.yellow, 0.3)); cap.position.copy(BTN).add(V3(0, 0.135, 0)); scene.add(cap);
+  addSolid('button', hous, new THREE.Box3(V3(-0.028, -0.0615, -0.028), V3(0.028, 0.0615 + 0.007, 0.028)), 'prop');
+  MACH.cap = cap;
+  // coin box with slot
+  block('coinbox', SLOT.x - 0.05, SLOT.x + 0.05, MC.panelY1, SLOT.y, 0.465, 0.535, MAT.tealDark, { phys: false });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.004, 0.05), MAT.chrome); plate.position.set(SLOT.x, SLOT.y + 0.002, SLOT.z); scene.add(plate);
+  const slot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.005, 0.008), basic(0, 0, 0)); slot.position.set(SLOT.x, SLOT.y + 0.003, SLOT.z); scene.add(slot);
+  const coinLight = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.01, 0.004), hdr(0xF2C14E, 1)); coinLight.position.set(SLOT.x, SLOT.y - 0.03, 0.537); scene.add(coinLight); MACH.coinLight = coinLight;
+  // chute walls (acrylic) with cream rail caps
+  block('chute-back', MC.chX0, MC.chX1, MC.pf, MC.rail - 0.012, -0.006, 0.006, MAT.acrylic, { shadow: false });
+  block('chute-right', MC.chX1 - 0.006, MC.chX1 + 0.006, MC.pf, MC.rail - 0.012, 0.0, 0.416, MAT.acrylic, { shadow: false });
+  block('rail-back', MC.chX0, MC.chX1 + 0.008, MC.rail - 0.012, MC.rail, -0.009, 0.009, MAT.cream);
+  block('rail-right', MC.chX1 - 0.009, MC.chX1 + 0.009, MC.rail - 0.012, MC.rail, 0.0, 0.416, MAT.cream);
+  // invisible keep-out column so only story plush can fall in the chute
+  staticBox(-0.62, -0.16, MC.pf, MC.gTop, -0.022, 0.42, G.KEEP, G.PLUSH);
+  // and keep the floor in front of the hero's face clear, so nothing hides it from inside
+  staticBox(-0.10, 0.52, MC.pf, MC.gTop, 0.27, 0.42, G.KEEPF, G.PLUSH | G.STORY);
+  // glass walls (physics + QA); visuals are custom shaders below
+  block('glass-front', -0.60, 0.60, MC.pf, MC.gTop, 0.416, 0.424, null, { vis: false });
+  block('glass-left', -0.61, -0.60, MC.pf, MC.gTop, -0.45, 0.42, null, { vis: false });
+  block('glass-right', 0.60, 0.61, MC.pf, MC.gTop, -0.45, 0.42, null, { vis: false });
+  staticBox(-0.6, 0.6, MC.gTop - 0.03, MC.gTop, -0.45, 0.42);
+  // LED strips inside (warm)
+  for (const z of [0.385, -0.42]) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(1.16, 0.012, 0.012), hdr(0xffb46a, 6)); s.position.set(0, MC.gTop - 0.045, z); scene.add(s);
+  }
+  // gantry
+  for (const z of [0.36, -0.41]) block('rail', -0.6, 0.6, MC.gantryY + 0.01, MC.gantryY + 0.03, z - 0.012, z + 0.012, MAT.chromeSoft, { phys: false, qa: false });
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.02, 0.8), MAT.chromeSoft); bridge.position.set(0, MC.gantryY + 0.0, -0.025); scene.add(bridge); MACH.bridge = bridge;
+  const carriage = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.035, 0.07), std(0x222222, 0.4, 0.6)); scene.add(carriage); MACH.carriage = carriage;
+  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 1, 6), MAT.chromeSoft); scene.add(cable); MACH.cable = cable;
+  // step stool (blue plastic)
+  const stoolM = std(PAL.blue, 0.5);
+  const sx0 = HERO0.x - 0.27, sx1 = HERO0.x + 0.27, sz0 = MC.panelZ1 + 0.015, sz1 = HERO0.z + 0.15;
+  block('stool-top', sx0, sx1, HERO0.y - 0.035, HERO0.y, sz0, sz1, stoolM, { phys: false });
+  block('stool-side-l', sx0, sx0 + 0.03, 0, HERO0.y - 0.035, sz0 + 0.02, sz1 - 0.02, stoolM, { phys: false });
+  block('stool-side-r', sx1 - 0.03, sx1, 0, HERO0.y - 0.035, sz0 + 0.02, sz1 - 0.02, stoolM, { phys: false });
+  block('stool-step', sx0, sx1, 0.40, 0.43, sz1, sz1 + 0.22, stoolM, { phys: false });
+  block('stool-step-l', sx0, sx0 + 0.03, 0, 0.40, sz1 + 0.02, sz1 + 0.2, stoolM, { phys: false });
+  block('stool-step-r', sx1 - 0.03, sx1, 0, 0.40, sz1 + 0.02, sz1 + 0.2, stoolM, { phys: false });
+  block('stool-brace', sx0 + 0.03, sx1 - 0.03, 0.36, 0.39, sz0 + 0.02, sz0 + 0.05, stoolM, { phys: false });
+}
+const MACH = {};
+
+// ───────────────────────────── glass (both faces reflect) ─────────────────────────────
+const GLASS = { hitT: 9.20, hit: V3(0.22, 1.12, 0.424), envOut: null, envIn: null };
+function glassMaterials(envTexOut, envTexIn) {
+  const common = `
+    uniform float uT, uHitT; uniform vec3 uHit;
+    varying vec3 vW; varying vec3 vN; varying float vBump;
+    float flex(vec3 p){ float dt=uT-uHitT; if(dt<0.0) return 0.0; float r=length(p.xy-uHit.xy);
+      return -0.010*exp(-dt*5.5)*cos(6.2831*8.5*dt)*exp(-r*r/0.035); }`;
+  const vert = `${common}
+    void main(){ vec3 p=position; vec4 w=modelMatrix*vec4(p,1.0);
+      float f = (abs(normal.z)>0.5) ? flex(w.xyz) : 0.0; w.z += f; vBump=f/0.010;
+      vW=w.xyz; vN=normalize(mat3(modelMatrix)*normal); gl_Position=projectionMatrix*viewMatrix*w; }`;
+  const fogFn = `float smudge(vec3 p){ float dt=uT-uHitT; if(dt<0.0) return 0.0;
+      vec2 d=(p.xy-uHit.xy)/vec2(0.034,0.026); float r=dot(d,d);
+      float n = 0.75+0.25*sin(p.x*410.0+p.y*170.0)*sin(p.y*380.0-p.x*90.0);
+      return exp(-r)*n*smoothstep(0.0,0.05,dt)*exp(-max(dt-0.3,0.0)*0.55); }`;
+  const tint = new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uHitT: { value: GLASS.hitT }, uHit: { value: GLASS.hit } },
+    vertexShader: vert,
+    fragmentShader: `${common}${fogFn}
+      void main(){ float b=abs(vBump); vec3 tint=vec3(0.90,0.955,0.95)*(1.0-0.10*b) + vec3(0.0,0.02,0.015)*b;
+        tint *= 1.0-0.18*smudge(vW); gl_FragColor=vec4(tint,1.0); }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+    blending: THREE.CustomBlending, blendSrc: THREE.ZeroFactor, blendDst: THREE.SrcColorFactor, blendEquation: THREE.AddEquation,
+  });
+  const refl = (env, sideSign, gain) => new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uHitT: { value: GLASS.hitT }, uHit: { value: GLASS.hit }, uEnv: { value: env }, uGain: { value: gain }, uSmudge: { value: 1 } },
+    vertexShader: vert,
+    fragmentShader: `${common}${fogFn}
+      uniform samplerCube uEnv; uniform float uGain, uSmudge;
+      void main(){ vec3 V=normalize(vW-cameraPosition); vec3 N=normalize(vN); if(dot(N,V)>0.0) N=-N;
+        // flex wobbles the normal so the reflection ripples on the bonk
+        N = normalize(N + vec3(0.0, 0.0, 0.0) + 0.6*vBump*vec3(sin(vW.x*40.0), cos(vW.y*40.0), 0.0));
+        float c=clamp(1.0+dot(V,N),0.0,1.0); float F=0.04+0.96*pow(c,5.0);
+        vec3 R=reflect(V,N); vec3 env=textureCube(uEnv, vec3(-R.x,R.y,R.z)).rgb;
+        float s=smudge(vW)*uSmudge;
+        gl_FragColor=vec4(env*F*uGain + vec3(0.85,0.9,0.95)*s*0.16, 1.0); }`,
+    transparent: true, depthWrite: false, side: sideSign > 0 ? THREE.FrontSide : THREE.BackSide,
+    blending: THREE.AdditiveBlending,
+  });
+  return { tint, out: refl(envTexOut, 1, 1.0), inn: refl(envTexIn, -1, 0.8) };
+}
+function buildGlass(mats) {
+  const panes = [];
+  const mk = (w, h, seg, pos, ry) => {
+    const g = new THREE.PlaneGeometry(w, h, seg, seg);
+    for (const [m, ro] of [[mats.tint, 10], [mats.out, 11], [mats.inn, 11]]) {
+      const mesh = new THREE.Mesh(g, m); mesh.position.copy(pos); mesh.rotation.y = ry; mesh.renderOrder = ro; scene.add(mesh); panes.push(mesh);
+    }
+  };
+  mk(1.2, MC.gTop - MC.pf, 40, V3(0, (MC.gTop + MC.pf) / 2, MC.glassZ), 0);
+  mk(0.87, MC.gTop - MC.pf, 1, V3(0.605, (MC.gTop + MC.pf) / 2, -0.015), Math.PI / 2);
+  mk(0.87, MC.gTop - MC.pf, 1, V3(-0.605, (MC.gTop + MC.pf) / 2, -0.015), -Math.PI / 2);
+  return panes;
+}
+
+// ───────────────────────────── the hero ─────────────────────────────
+const HERO = {};
+function buildHero() {
+  const cells = mascotCells(6, 4);
+  // albedo calibrated so the lit face measures D97757 on the final frames (linear 0.648, 0.188, 0.111)
+  MAT.hero = std(new THREE.Color().setRGB(0.648, 0.188, 0.111), 0.5);
+  MAT.eye = std(PAL.eye, 0.32);
+  MAT.blush = std(PAL.pink, 0.6, 0, { emissive: new THREE.Color(PAL.pink), emissiveIntensity: 0.25 });
+  const bev = H * 0.11;
+  const root = new THREE.Group(), leanPivot = new THREE.Group(), leanBack = new THREE.Group(), squash = new THREE.Group();
+  root.add(leanPivot); leanPivot.add(leanBack); leanBack.add(squash); scene.add(root);
+  const body = new THREE.Mesh(voxGeo(cells.body, H, bev), MAT.hero); body.castShadow = body.receiveShadow = true; squash.add(body);
+  addSolid('hero-body', body, body.geometry.boundingBox.clone(), 'hero');
+  const arms = {};
+  for (const [nm, sgn] of [['armA', -1], ['armB', 1]]) {
+    const piv = new THREE.Group(); piv.position.set(sgn * 7 * H, 7 * H, 0); squash.add(piv);
+    const off = new THREE.Group(); piv.add(off);
+    const m = new THREE.Mesh(voxGeo(cells[nm], H, bev, [-sgn * 7 * H, -7 * H, 0]), MAT.hero); m.castShadow = m.receiveShadow = true; off.add(m);
+    const tip = new THREE.Object3D(); tip.position.set(sgn * 3 * H, 0, 0); off.add(tip);
+    piv.rotation.order = 'YZX';
+    arms[nm] = { piv, off, mesh: m, tip, sgn };
+    addSolid('hero-' + nm, m, m.geometry.boundingBox.clone(), 'hero');
+  }
+  const legs = cells.legs.map((lc, li) => {
+    const xc = [-5, -2, 2, 5][li] * H;
+    const g = new THREE.Group(); g.position.set(xc, 3 * H, 0); squash.add(g);
+    const m = new THREE.Mesh(voxGeo(lc, H, bev, [-xc, -3 * H, 0]), MAT.hero); m.castShadow = m.receiveShadow = true; g.add(m);
+    addSolid('hero-leg' + li, m, m.geometry.boundingBox.clone(), 'hero');
+    return g;
+  });
+  const eyeCells = []; for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) eyeCells.push([i, j, 0]);
+  const eyeGeo = voxGeo(eyeCells, H, H * 0.12, [-H, -1.5 * H, -0.5 * H]);
+  const eyes = [-3, 3].map(x => {
+    const g = new THREE.Group(); g.position.set(x * H, 8.5 * H, 3 * H + 0.12 * H); squash.add(g);
+    const m = new THREE.Mesh(eyeGeo, MAT.eye); m.scale.z = 0.42; g.add(m); return g;
+  });
+  const cheekGeo = new THREE.BoxGeometry(2 * H, 0.9 * H, 0.2 * H);
+  const cheeks = [-5, 5].map(x => { const m = new THREE.Mesh(cheekGeo, MAT.blush); m.position.set(x * H, 6.4 * H, 3 * H + 0.06 * H); squash.add(m); return m; });
+  Object.assign(HERO, { root, leanPivot, leanBack, squash, body, arms, legs, eyes, cheeks });
+}
+
+// ───────────────────────────── plush ─────────────────────────────
+const PLUSH = [];      // {group, squashG, eyes, body(cannon), color, story}
+const PL_SHAPES = [    // physics boxes in plush-local coordinates (origin = body centre)
+  [[0, 0, 0], [7 * P, 5 * P, 2.5 * P * (1 + PILLOW)]],
+  [[0, -6.5 * P, 0], [6 * P, 1.5 * P, 1.5 * P]],
+  [[-8.5 * P, -1 * P, 0], [1.5 * P, 1 * P, 1.5 * P]],
+  [[8.5 * P, -1 * P, 0], [1.5 * P, 1 * P, 1.5 * P]],
+];
+const PL_HALF_T = 2.5 * P * (1 + PILLOW);     // half thickness lying flat
+function pillowDeform(s) {
+  return (x, y, z) => {
+    let f = 0;
+    if (y > -5.3 * s) f = clamp(1 - (x / (7.7 * s)) ** 2) * clamp(1 - (y / (5.7 * s)) ** 2);
+    const k = Math.sqrt(f);
+    return [x * (1 + 0.035 * k), y, z * (1 + PILLOW * k)];
+  };
+}
+function buildPlushGeos() {
+  const c = mascotCells(5, 3);
+  const all = [...c.body, ...c.armA, ...c.armB, ...c.legs.flat()];
+  const body = voxGeo(all, P, P * 0.26, [0, -8 * P, 0], pillowDeform(P));
+  const eyeCells = []; for (let i = 0; i < 2; i++) for (let j = 0; j < 3; j++) eyeCells.push([i, j, 0]);
+  const eye = voxGeo(eyeCells, P, P * 0.2, [-P, -1.5 * P, -0.5 * P]);
+  // bow: 5×3 on the top right of the head
+  const bowC = []; ['##.##', '#####', '##.##'].forEach((row, r) => row.split('').forEach((v, cc) => { if (v === '#') for (let k = -1; k <= 0; k++) bowC.push([cc + 2, 15 - r, k]); }));
+  const bow = voxGeo(bowC, P, P * 0.22, [0, -8 * P, 0]);
+  const knot = voxGeo([[4, 14, -1], [4, 14, 0]], P, P * 0.22, [0, -8 * P, 0]);
+  // beanie: a shell over the top three rows + a pom-pom
+  const bean = [], band = [];
+  for (let r = -1; r <= 2; r++) for (let cc = 2; cc <= 17; cc++) for (let k = -3.5; k <= 2.5; k++) {
+    const edge = cc === 2 || cc === 17 || k === -3.5 || k === 2.5 || r === -1;
+    if (!edge) continue; if (r === -1 && (cc === 2 || cc === 17)) continue;
+    (r === 2 ? band : bean).push([cc - 10, 12 - r, k]);
+  }
+  const beanie = voxGeo(bean, P, P * 0.24, [0, -8 * P, 0], pillowDeform(P));
+  const beanBand = voxGeo(band, P, P * 0.24, [0, -8 * P, 0], pillowDeform(P));
+  const pom = voxGeo([[-1, 14, -1], [0, 14, -1], [-1, 14, 0], [0, 14, 0], [-1, 15, -1], [0, 15, -1], [-1, 15, 0], [0, 15, 0]], P, P * 0.35, [0, -8 * P, 0]);
+  return { body, eye, bow, knot, beanie, beanBand, pom };
+}
+function buildPlushies() {
+  const geos = buildPlushGeos();
+  const cols = { cream: PAL.cream, sage: PAL.sage, yellow: PAL.yellow, pink: PAL.pink, blue: PAL.blue, orange: PAL.hero };
+  const mats = {}; for (const k in cols) mats[k] = std(cols[k], 0.93);
+  MAT.felt = std(0x161414, 1.0);
+  const R = rng(42);
+  // story plush first: A yellow with a bow, B blue in a beanie, C the orange one
+  const list = [['yellow', 'bow'], ['blue', 'beanie'], ['orange', null]];
+  const pool = ['cream', 'sage', 'yellow', 'pink', 'blue'];
+  for (let i = 0; i < 29; i++) list.push([pool[i % 5], R() < 0.28 ? 'bow' : R() < 0.3 ? 'beanie' : null]);
+  list.forEach(([col, acc], i) => {
+    const group = new THREE.Group(), sq = new THREE.Group(); group.add(sq); scene.add(group);
+    const body = new THREE.Mesh(geos.body, mats[col]); body.castShadow = body.receiveShadow = true; sq.add(body);
+    const eyes = [-3, 3].map(x => {
+      const fz = clamp(1 - (x * P / (7.7 * P)) ** 2) * clamp(1 - (0.5 / 5.7) ** 2);
+      const g = new THREE.Group(); g.position.set(x * P, 0.5 * P, 2.5 * P * (1 + PILLOW * Math.sqrt(fz)) - 0.05 * P); sq.add(g);
+      const m = new THREE.Mesh(geos.eye, MAT.felt); m.scale.z = 0.55; g.add(m); return g;
+    });
+    const other = { cream: 'pink', sage: 'yellow', yellow: 'pink', pink: 'cream', blue: 'yellow' };
+    if (acc === 'bow') { const b = new THREE.Mesh(geos.bow, mats[other[col]]); b.castShadow = true; sq.add(b); sq.add(new THREE.Mesh(geos.knot, mats[col === 'pink' ? 'yellow' : 'cream'])); }
+    if (acc === 'beanie') {
+      const bc = { cream: 'sage', sage: 'blue', yellow: 'blue', pink: 'sage', blue: 'pink' }[col];
+      const b = new THREE.Mesh(geos.beanie, mats[bc]); b.castShadow = true; sq.add(b);
+      sq.add(new THREE.Mesh(geos.beanBand, mats.cream)); sq.add(new THREE.Mesh(geos.pom, mats.cream));
+    }
+    const pb = new CANNON.Body({ mass: 0.12, material: physMat, linearDamping: 0.12, angularDamping: 0.25, allowSleep: true, sleepSpeedLimit: 0.06, sleepTimeLimit: 0.4,
+      collisionFilterGroup: i < 3 ? G.STORY : G.PLUSH, collisionFilterMask: G.STATIC | G.PLUSH | G.STORY | G.CLAW | G.KEEPF | (i < 3 ? 0 : G.KEEP) });
+    for (const [o, h] of PL_SHAPES) pb.addShape(new CANNON.Box(new CANNON.Vec3(...h)), new CANNON.Vec3(...o));
+    if (acc) pb.addShape(new CANNON.Box(new CANNON.Vec3(acc === 'bow' ? 2.5 * P : 7 * P, 1.5 * P, acc === 'bow' ? 1 * P : 3.1 * P)), new CANNON.Vec3(acc === 'bow' ? 4.5 * P : 0, 6.5 * P, 0));
+    world.addBody(pb);
+    const shapes = PL_SHAPES.map(([o, h]) => new THREE.Box3(V3(o[0] - h[0], o[1] - h[1], o[2] - h[2]), V3(o[0] + h[0], o[1] + h[1], o[2] + h[2])));
+    PLUSH.push({ group, sq, eyes, body: pb, col, acc, story: i < 3, shapes });
+    shapes.forEach((b, k) => addSolid(`plush${i}.${k}`, group, b, 'plush' + i));
+  });
+}
+
+// ───────────────────────────── the claw ─────────────────────────────
+const CS = 0.85;
+const PRONG = [[0, 0], [0.075, -0.07], [0.062, -0.16], [0.028, -0.198]].map(([x, y]) => [x * CS, y * CS]);
+const PR_R = 0.0115 * CS, HUB_R = 0.052 * CS, HUB_H = 0.075 * CS, PIV_R = 0.045 * CS, PIV_Y = -0.035 * CS;
+const PHI = [0, 2 * Math.PI / 3, 4 * Math.PI / 3];
+const CLAW = {};
+function prongSegs() {   // segment boxes in prong-local frame: [center, angle, halfLen]
+  const out = [];
+  for (let i = 0; i < 3; i++) {
+    const [ax, ay] = PRONG[i], [bx, by] = PRONG[i + 1];
+    const cx = (ax + bx) / 2, cy = (ay + by) / 2, len = Math.hypot(bx - ax, by - ay);
+    out.push({ c: [cx, cy], ang: Math.atan2(by - ay, bx - ax), hl: len / 2 + PR_R * 0.6 });
+  }
+  return out;
+}
+const SEGS = prongSegs();
+function buildClaw() {
+  const hub = new THREE.Group(); scene.add(hub);
+  const hubM = new THREE.Mesh(new THREE.CylinderGeometry(HUB_R, HUB_R * 0.92, HUB_H, 28), MAT.chrome); hubM.castShadow = true; hub.add(hubM);
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(HUB_R * 1.02, HUB_R * 1.02, 0.014, 28), std(0x1a1a1a, 0.5)); band.position.y = 0.012; hub.add(band);
+  const capT = new THREE.Mesh(new THREE.CylinderGeometry(0.02, HUB_R * 0.7, 0.03, 20), MAT.chrome); capT.position.y = HUB_H / 2 + 0.015; hub.add(capT);
+  addSolid('hub', hubM, new THREE.Box3(V3(-HUB_R, -HUB_H / 2, -HUB_R), V3(HUB_R, HUB_H / 2, HUB_R)), 'claw');
+  const prongs = PHI.map((phi, i) => {
+    const yaw = new THREE.Group(); yaw.rotation.y = phi; hub.add(yaw);
+    const piv = new THREE.Group(); piv.position.set(PIV_R, PIV_Y, 0); yaw.add(piv);
+    SEGS.forEach((s, k) => {
+      const len = s.hl * 2 - PR_R * 0.6;
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(PR_R, PR_R, len, 14), MAT.chrome);
+      tube.position.set(s.c[0], s.c[1], 0); tube.rotation.z = s.ang - Math.PI / 2; tube.castShadow = true; piv.add(tube);
+      const j = new THREE.Mesh(new THREE.SphereGeometry(PR_R * 1.08, 14, 10), MAT.chrome); j.position.set(...PRONG[k], 0); piv.add(j);
+      const qa = new THREE.Object3D(); qa.position.set(s.c[0], s.c[1], 0); qa.rotation.z = s.ang; piv.add(qa);
+      addSolid(`prong${i}.${k}`, qa, new THREE.Box3(V3(-s.hl, -PR_R, -PR_R), V3(s.hl, PR_R, PR_R)), 'claw');
+    });
+    const tipPad = new THREE.Mesh(new THREE.SphereGeometry(PR_R * 1.25, 14, 10), MAT.chrome); tipPad.position.set(...PRONG[3], 0); piv.add(tipPad);
+    const hinge = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.03, 10), std(0x222222, 0.4, 0.5)); hinge.rotation.x = Math.PI / 2; piv.add(hinge);
+    return { yaw, piv };
+  });
+  Object.assign(CLAW, { hub, prongs });
+}
+
+// ───────────────────────────── claw program & physics bake ─────────────────────────────
+const CL = { home: { x: -0.06, z: 0.20 }, Lhome: 0.34, Lhigh: 0.20, aOpen: 0.75, aRest: 0.16, aMin: -0.55 };
+const RAIL_AIM = { x: -0.37, z: -0.012 }, CHUTE_AIM = { x: -0.39, z: 0.205 };
+const BAKE_HZ = 240, REC_HZ = 120, PRE = 4.2;
+const REC = { n: 0 };
+const EVENTS = [];                  // sound/animation events found by the bake
+
+function hubFrame(cx, cz, L, thx, thz, out) {
+  const d = V3(Math.sin(thx), -Math.cos(thx) * Math.cos(thz), Math.sin(thz)).normalize();
+  out.pos.set(cx, MC.gantryY, cz).addScaledVector(d, L);
+  out.quat.setFromUnitVectors(V3(0, -1, 0), d);
+  return out;
+}
+const _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _v1 = new THREE.Vector3();
+function prongWorld(hub, i, alpha, outPos, outQuat) {
+  _q1.setFromAxisAngle(V3(0, 1, 0), PHI[i]);
+  outQuat.copy(hub.quat).multiply(_q1);
+  outPos.set(PIV_R, PIV_Y, 0).applyQuaternion(outQuat).add(hub.pos);
+  _q2.setFromAxisAngle(V3(0, 0, 1), alpha); outQuat.multiply(_q2);
+}
+
+// Oriented boxes and the separating-axis test (penetration depth).
+function obbFrom(matrix, box) {
+  const c = box.getCenter(V3()), h = box.getSize(V3()).multiplyScalar(0.5);
+  const e = matrix.elements;
+  const ax = [V3(e[0], e[1], e[2]), V3(e[4], e[5], e[6]), V3(e[8], e[9], e[10])];
+  const half = [h.x * ax[0].length(), h.y * ax[1].length(), h.z * ax[2].length()];
+  ax.forEach(a => a.normalize());
+  return { c: c.applyMatrix4(matrix), ax, half };
+}
+function obbPen(A, B) {
+  const T = B.c.clone().sub(A.c); let minO = Infinity;
+  const axes = [...A.ax, ...B.ax];
+  for (const a of A.ax) for (const b of B.ax) { const x = V3().crossVectors(a, b); if (x.lengthSq() > 1e-8) axes.push(x.normalize()); }
+  for (const L of axes) {
+    const ra = A.half[0] * Math.abs(A.ax[0].dot(L)) + A.half[1] * Math.abs(A.ax[1].dot(L)) + A.half[2] * Math.abs(A.ax[2].dot(L));
+    const rb = B.half[0] * Math.abs(B.ax[0].dot(L)) + B.half[1] * Math.abs(B.ax[1].dot(L)) + B.half[2] * Math.abs(B.ax[2].dot(L));
+    const o = ra + rb - Math.abs(T.dot(L));
+    if (o <= 0) return 0;
+    if (o < minO) minO = o;
+  }
+  return minO;
+}
+const _m4 = new THREE.Matrix4();
+function prongOBBs(hub, i, alpha) {
+  const p = V3(), q = new THREE.Quaternion(); prongWorld(hub, i, alpha, p, q);
+  const base = new THREE.Matrix4().compose(p, q, V3(1, 1, 1));
+  return SEGS.map(s => {
+    const m = base.clone().multiply(_m4.compose(V3(s.c[0], s.c[1], 0), new THREE.Quaternion().setFromAxisAngle(V3(0, 0, 1), s.ang), V3(1, 1, 1)));
+    return obbFrom(m, new THREE.Box3(V3(-s.hl, -PR_R, -PR_R), V3(s.hl, PR_R, PR_R)));
+  });
+}
+function plushOBBs(pb) {
+  const m = new THREE.Matrix4().compose(V3(pb.position.x, pb.position.y, pb.position.z), new THREE.Quaternion(pb.quaternion.x, pb.quaternion.y, pb.quaternion.z, pb.quaternion.w), V3(1, 1, 1));
+  return PL_SHAPES.map(([o, h]) => obbFrom(m, new THREE.Box3(V3(o[0] - h[0], o[1] - h[1], o[2] - h[2]), V3(o[0] + h[0], o[1] + h[1], o[2] + h[2]))));
+}
+
+// The program the machine runs. Targets resolve when an action starts, so the claw aims at
+// where the prize really is, and a carry re-aims so the plush (not the hub) ends over its goal.
+const PROG = [
+  // try 1 — the weak grip
+  { a: 'cable', t: 1.24, d: 0.32, L: () => CL.Lhigh },
+  { a: 'move', t: 1.52, d: 0.88, to: (s) => above(0) },
+  { a: 'drop', t: 2.50, d: 0.50, L: () => dropL(0) },
+  { a: 'close', t: 3.00, d: 0.28, i: 0 },
+  { a: 'grab', t: 3.30, i: 0 },
+  { a: 'cable', t: 3.32, d: 0.46, L: () => CL.Lhigh },
+  { a: 'slip', t: 3.62, i: 0 },
+  { a: 'move', t: 3.86, d: 0.72, to: () => CL.home, rest: true },
+  // try 2 — onto the rail
+  { a: 'move', t: 4.95, d: 0.48, to: (s) => ({ x: above(1).x, z: s.cz }) },
+  { a: 'move', t: 5.50, d: 0.38, to: (s) => ({ x: s.cx, z: above(1).z }) },
+  { a: 'move', t: 5.94, d: 0.16, to: () => above(1) },
+  { a: 'drop', t: 6.28, d: 0.46, L: () => dropL(1) },
+  { a: 'close', t: 6.74, d: 0.28, i: 1 },
+  { a: 'grab', t: 7.04, i: 1 },
+  { a: 'cable', t: 7.06, d: 0.40, L: () => CL.Lhigh },
+  { a: 'carry', t: 7.46, d: 1.02, i: 1, aim: () => RAIL_AIM },
+  { a: 'open', t: 8.56, d: 0.16 },
+  { a: 'rail', t: 8.56, i: 1 },
+  { a: 'move', t: 9.02, d: 0.92, to: () => CL.home, rest: true },
+  // try 3 — holding its breath
+  { a: 'move', t: 10.40, d: 0.82, to: (s) => near(2, s, 0.07) },
+  { a: 'move', t: 11.34, d: 0.22, to: (s) => near(2, s, 0.025) },
+  { a: 'move', t: 11.70, d: 0.16, to: (s) => near(2, s, 0.008) },
+  { a: 'move', t: 12.08, d: 0.12, to: () => above(2) },
+  { a: 'drop', t: 12.62, d: 0.84, L: () => dropL(2) },
+  { a: 'close', t: 13.46, d: 0.36, i: 2 },
+  { a: 'grab', t: 13.84, i: 2 },
+  { a: 'cable', t: 13.86, d: 0.56, L: () => CL.Lhigh },
+  { a: 'carry', t: 14.44, d: 0.80, i: 2, aim: () => CHUTE_AIM },
+  { a: 'open', t: 15.26, d: 0.18 },
+  { a: 'release', t: 15.26, i: 2 },
+  { a: 'move', t: 15.72, d: 1.0, to: () => CL.home, rest: true },
+];
+function above(i) { const b = PLUSH[i].body.position; return { x: b.x, z: b.z }; }
+function dropL(i) { return MC.gantryY - (PLUSH[i].body.position.y + 0.12); }
+function near(i, s, d) { const a = above(i); const dx = s.cx - a.x, dz = s.cz - a.z, l = Math.hypot(dx, dz) || 1; return { x: a.x + dx / l * d, z: a.z + dz / l * d }; }
+
+function bake() {
+  const t0 = performance.now();
+  const R = rng(1234);
+  // spawn: the 29 pile plush in a staggered layered grid above the playfield
+  const cells = [];
+  for (const z of [-0.34, -0.14, 0.06, 0.26]) for (const x of [-0.45, -0.15, 0.15, 0.45]) if (!(x - 0.13 < -0.16 && z + 0.085 > -0.03)) cells.push([x, z]);
+  let n = 0;
+  for (let layer = 0; layer < 4 && n < 29; layer++) for (let c = 0; c < cells.length && n < 29; c++) {
+    const pb = PLUSH[3 + n].body;
+    const [x, z] = cells[(c + layer * 3) % cells.length];
+    pb.position.set(x + (R() - .5) * 0.04, 0.82 + layer * 0.11 + (c % 2) * 0.03, z + (R() - .5) * 0.03);
+    const up = R() < 0.5 ? -Math.PI / 2 : Math.PI / 2;
+    pb.quaternion.setFromEuler(up + (R() - .5) * 0.3, (R() - .5) * 0.7, (R() - .5) * 0.3);
+    n++;
+  }
+  // story plush parked far away until the pile settles
+  PLUSH.slice(0, 3).forEach((p, i) => { p.body.position.set(5 + i, 5, 5); p.body.type = CANNON.Body.STATIC; p.body.updateMassProperties(); });
+  const dt = 1 / BAKE_HZ;
+  for (let s = 0; s < 2.6 * BAKE_HZ; s++) world.step(dt);
+  // drop the three story plush face up on top of the settled pile
+  const story = [[0.30, 0.20], [0.02, -0.12], [0.36, -0.22]];
+  story.forEach(([x, z], i) => {
+    const pb = PLUSH[i].body;
+    let top = MC.pf;
+    const ray = new CANNON.RaycastResult();
+    for (const [ox, oz] of [[0, 0], [0.15, 0], [-0.15, 0], [0, 0.09], [0, -0.09]]) {
+      ray.reset();
+      world.raycastClosest(new CANNON.Vec3(x + ox, 1.6, z + oz), new CANNON.Vec3(x + ox, 0.5, z + oz), { collisionFilterMask: G.STATIC | G.PLUSH | G.STORY, skipBackfaces: true }, ray);
+      if (ray.hasHit) top = Math.max(top, ray.hitPointWorld.y);
+    }
+    pb.type = CANNON.Body.DYNAMIC; pb.updateMassProperties(); pb.wakeUp();
+    pb.position.set(x, top + PL_HALF_T + 0.012, z);
+    pb.quaternion.setFromEuler(-Math.PI / 2, 0, 0);   // face up
+    pb.velocity.set(0, 0, 0); pb.angularVelocity.set(0, 0, 0);
+  });
+  for (let s = 0; s < (PRE - 2.6) * BAKE_HZ; s++) world.step(dt);
+
+  // claw kinematic bodies
+  const clawBodies = [];
+  const hubB = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, collisionFilterGroup: G.CLAW, collisionFilterMask: G.PLUSH | G.STORY, material: physMat });
+  hubB.addShape(new CANNON.Box(new CANNON.Vec3(HUB_R, HUB_H / 2, HUB_R))); world.addBody(hubB);
+  for (let i = 0; i < 3; i++) {
+    const b = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, collisionFilterGroup: G.CLAW, collisionFilterMask: G.PLUSH | G.STORY, material: physMat });
+    for (const sg of SEGS) b.addShape(new CANNON.Box(new CANNON.Vec3(sg.hl, PR_R, PR_R)), new CANNON.Vec3(sg.c[0], sg.c[1], 0), new CANNON.Quaternion().setFromEuler(0, 0, sg.ang));
+    world.addBody(b); clawBodies.push(b);
+  }
+  // state
+  const s = { cx: CL.home.x, cz: CL.home.z, vx: 0, vz: 0, L: CL.Lhome, thx: 0.075, thz: -0.03, wx: 0, wz: 0.15, alpha: [CL.aRest, CL.aRest, CL.aRest],
+    held: -1, rel: null, sway: [0, 0], swayV: [0, 0], low: false, scripted: {} };
+  const act = PROG.map(p => ({ ...p, started: false }));
+  const steps = DUR * BAKE_HZ + 1, every = BAKE_HZ / REC_HZ, nRec = Math.floor(steps / every) + 1;
+  REC.n = nRec; REC.pl = new Float32Array(nRec * PLUSH.length * 7); REC.cl = new Float32Array(nRec * 12);
+  const hub = { pos: V3(), quat: new THREE.Quaternion() }, hubNext = { pos: V3(), quat: new THREE.Quaternion() };
+  const contacts = new Map();
+  const preV = PLUSH.map(() => 0);
+  world.addEventListener('beginContact', (e) => {
+    for (const [a, b] of [[e.bodyA, e.bodyB], [e.bodyB, e.bodyA]]) {
+      const i = PLUSH.findIndex(p => p.body === a); if (i < 0) continue;
+      const v = preV[i]; if (v < 0.22) continue;
+      const last = contacts.get(i) ?? -1;
+      if (world.time - last < 0.09) continue;
+      contacts.set(i, world.time);
+      EVENTS.push({ type: 'thump', t: world.time - PRE, i, v, other: PLUSH.findIndex(p => p.body === b), y: a.position.y });
+    }
+  });
+  world.time = PRE;
+  let prevVx = 0, prevVz = 0;
+  for (let k = 0; k < steps; k++) {
+    const t = k / BAKE_HZ;
+    // --- program
+    for (const p of act) {
+      if (!p.started && t >= p.t) {
+        p.started = true;
+        if (p.a === 'move') { p.from = { x: s.cx, z: s.cz }; p.target = p.to(s); EVENTS.push({ type: 'move', t, d: p.d, auto: !!p.rest }); }
+        if (p.a === 'carry') { const pb = PLUSH[p.i].body, aim = p.aim(); p.from = { x: s.cx, z: s.cz }; p.target = { x: s.cx + aim.x - pb.position.x, z: s.cz + aim.z - pb.position.z }; EVENTS.push({ type: 'move', t, d: p.d }); }
+        if (p.a === 'cable' || p.a === 'drop') { p.L0 = s.L; p.L1 = p.L(); EVENTS.push({ type: 'cable', t, d: p.d, dir: Math.sign(p.L1 - p.L0) }); }
+        if (p.a === 'drop') s.low = true;
+        if (p.a === 'close') { p.stopped = [false, false, false]; EVENTS.push({ type: 'close', t }); }
+        if (p.a === 'grab') {
+          const pb = PLUSH[p.i].body; s.held = p.i;
+          const pm = new THREE.Matrix4().compose(V3(pb.position.x, pb.position.y, pb.position.z), new THREE.Quaternion(pb.quaternion.x, pb.quaternion.y, pb.quaternion.z, pb.quaternion.w), V3(1, 1, 1));
+          const hm = new THREE.Matrix4().compose(hub.pos, hub.quat, V3(1, 1, 1));
+          s.rel = hm.invert().multiply(pm);
+          pb.type = CANNON.Body.KINEMATIC; pb.updateMassProperties(); pb.wakeUp();
+        }
+        if (p.a === 'slip' || p.a === 'release') {
+          const pb = PLUSH[p.i].body; pb.type = CANNON.Body.DYNAMIC; pb.updateMassProperties(); pb.wakeUp();
+          pb.velocity.set(s.vx, -(s.Lv || 0), s.vz);
+          s.held = -1; EVENTS.push({ type: p.a, t, i: p.i });
+          if (p.a === 'slip') { s.slack = { t0: t, a0: s.alpha.slice() }; }
+        }
+        if (p.a === 'open') { p.a0 = s.alpha.slice(); EVENTS.push({ type: 'open', t }); }
+        if (p.a === 'rail') {
+          const pb = PLUSH[p.i].body; s.held = -1;
+          s.rail = { i: p.i, t0: t, p0: V3(pb.position.x, pb.position.y, pb.position.z), q0: new THREE.Quaternion(pb.quaternion.x, pb.quaternion.y, pb.quaternion.z, pb.quaternion.w) };
+          EVENTS.push({ type: 'rail', t, i: p.i });
+        }
+        if (p.rest) s.low = false;
+      }
+      const u = (t - p.t) / (p.d || 1e-6);
+      if (!p.started || u > 1.0001) {
+        if (p.started && !p.done) {
+          p.done = true;
+          if (p.a === 'move' || p.a === 'carry') EVENTS.push({ type: 'moveEnd', t, auto: !!p.rest });
+          if (p.a === 'cable' || p.a === 'drop') EVENTS.push({ type: 'cableEnd', t });
+        }
+        continue;
+      }
+      const e = sm(0, 1, u);
+      if (p.a === 'move' || p.a === 'carry') { s.cx = lerp(p.from.x, p.target.x, e); s.cz = lerp(p.from.z, p.target.z, e); }
+      if (p.a === 'cable' || p.a === 'drop') { const nl = lerp(p.L0, p.L1, p.a === 'drop' ? ss(0, 1, u) : e); s.Lv = (nl - s.L) * BAKE_HZ; s.L = nl; }
+      if (p.a === 'drop') for (let i = 0; i < 3; i++) s.alpha[i] = lerp(s.alpha[i], CL.aOpen, clamp(u * 3) * 0.2);
+      if (p.a === 'open') for (let i = 0; i < 3; i++) s.alpha[i] = lerp(p.a0[i], CL.aOpen, backOut(u, 1.2));
+      if (p.a === 'move' && p.rest) for (let i = 0; i < 3; i++) s.alpha[i] = lerp(s.alpha[i], CL.aRest, 0.02);
+      if (p.a === 'close') {
+        for (let i = 0; i < 3; i++) {
+          if (p.stopped[i]) continue;
+          const na = s.alpha[i] - (CL.aOpen - CL.aMin) / (p.d * BAKE_HZ) * 1.0;
+          if (na <= CL.aMin) { s.alpha[i] = CL.aMin; p.stopped[i] = true; continue; }
+          const segs = prongOBBs(hub, i, na);
+          const tgt = plushOBBs(PLUSH[p.i].body);
+          let hit = false;
+          for (const a of segs) for (const b of tgt) if (obbPen(a, b) > 0.0015) hit = true;
+          if (!hit) for (const pl of PLUSH) {
+            const ob = pl.body; if (ob === PLUSH[p.i].body || Math.abs(ob.position.x - hub.pos.x) > 0.4 || Math.abs(ob.position.z - hub.pos.z) > 0.4) continue;
+            for (const a of segs) for (const b of plushOBBs(ob)) if (obbPen(a, b) > 0.012) hit = true;
+          }
+          if (hit) { p.stopped[i] = true; EVENTS.push({ type: 'prongStop', t, i }); }
+          else s.alpha[i] = na;
+        }
+      }
+    }
+    if (s.slack) { const u = (t - s.slack.t0) / 0.18; if (u <= 1) for (let i = 0; i < 3; i++) s.alpha[i] = s.slack.a0[i] + 0.22 * ss(0, 1, u); }
+    // --- carriage dynamics → pendulum
+    const vx = (s.cx - (s.pcx ?? s.cx)) * BAKE_HZ, vz = (s.cz - (s.pcz ?? s.cz)) * BAKE_HZ;
+    const ax = (vx - prevVx) * BAKE_HZ, az = (vz - prevVz) * BAKE_HZ; prevVx = vx; prevVz = vz; s.pcx = s.cx; s.pcz = s.cz; s.vx = vx; s.vz = vz;
+    const g = 9.81, damp = s.low ? 12 : 0.9, CPL = 0.35;   // the carriage's own damping softens the swing
+    s.wx += (-(g / s.L) * Math.sin(s.thx) - CPL * ax / s.L * Math.cos(s.thx) - damp * s.wx) * dt; s.thx += s.wx * dt;
+    s.wz += (-(g / s.L) * Math.sin(s.thz) - CPL * az / s.L * Math.cos(s.thz) - damp * s.wz) * dt; s.thz += s.wz * dt;
+    // held plush sways a little in the grip
+    for (let d = 0; d < 2; d++) { const acc = d ? az : ax; s.swayV[d] += (-60 * s.sway[d] - 2.2 * s.swayV[d] - acc * 0.9) * dt; s.sway[d] += s.swayV[d] * dt; }
+    hubFrame(s.cx, s.cz, s.L, s.thx, s.thz, hub);
+    // next-step pose for kinematic velocities
+    hubFrame(s.cx + vx * dt, s.cz + vz * dt, s.L + (s.Lv || 0) * dt * 0, s.thx + s.wx * dt, s.thz + s.wz * dt, hubNext);
+    setKinematic(hubB, hub.pos, hub.quat, hubNext.pos, hubNext.quat, dt);
+    for (let i = 0; i < 3; i++) {
+      const p0 = V3(), q0 = new THREE.Quaternion(), p1 = V3(), q1 = new THREE.Quaternion();
+      prongWorld(hub, i, s.alpha[i], p0, q0); prongWorld(hubNext, i, s.alpha[i], p1, q1);
+      setKinematic(clawBodies[i], p0, q0, p1, q1, dt);
+    }
+    if (s.held >= 0) {
+      const pb = PLUSH[s.held].body;
+      const swayQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(s.sway[1] * 0.25, 0, -s.sway[0] * 0.25));
+      const m0 = new THREE.Matrix4().compose(hub.pos, hub.quat, V3(1, 1, 1)).multiply(new THREE.Matrix4().makeRotationFromQuaternion(swayQ)).multiply(s.rel);
+      const m1 = new THREE.Matrix4().compose(hubNext.pos, hubNext.quat, V3(1, 1, 1)).multiply(new THREE.Matrix4().makeRotationFromQuaternion(swayQ)).multiply(s.rel);
+      const a = decompose(m0), b = decompose(m1);
+      setKinematic(pb, a.p, a.q, b.p, b.q, dt);
+    }
+    if (s.rail) railTeeter(s, t, dt);
+    if (s.keepB && t > s.keepB.t + 0.22) { PLUSH[s.keepB.i].body.collisionFilterMask |= G.KEEP; s.keepB = null; }
+    PLUSH.forEach((p, i) => { preV[i] = p.body.velocity.length(); });
+    // --- record
+    if (k % every === 0) {
+      const r = k / every;
+      PLUSH.forEach((p, i) => {
+        const o = (r * PLUSH.length + i) * 7, b = p.body;
+        REC.pl[o] = b.position.x; REC.pl[o + 1] = b.position.y; REC.pl[o + 2] = b.position.z;
+        REC.pl[o + 3] = b.quaternion.x; REC.pl[o + 4] = b.quaternion.y; REC.pl[o + 5] = b.quaternion.z; REC.pl[o + 6] = b.quaternion.w;
+      });
+      const o = r * 12;
+      REC.cl.set([s.cx, s.cz, s.L, s.thx, s.thz, s.alpha[0], s.alpha[1], s.alpha[2], s.vx, s.vz, s.held, s.Lv || 0], o);
+    }
+    world.step(dt);
+    if (k % every === 0) s.Lv = 0;
+  }
+  EVENTS.sort((a, b) => a.t - b.t);
+  console.log(`bake ${(performance.now() - t0).toFixed(0)} ms, ${EVENTS.length} events`);
+}
+function decompose(m) { const p = V3(), q = new THREE.Quaternion(), sc = V3(); m.decompose(p, q, sc); return { p, q }; }
+function setKinematic(b, p0, q0, p1, q1, dt) {
+  b.position.set(p0.x, p0.y, p0.z); b.quaternion.set(q0.x, q0.y, q0.z, q0.w);
+  b.velocity.set((p1.x - p0.x) / dt, (p1.y - p0.y) / dt, (p1.z - p0.z) / dt);
+  const dq = q1.clone().multiply(q0.clone().invert()); if (dq.w < 0) { dq.x *= -1; dq.y *= -1; dq.z *= -1; dq.w *= -1; }
+  const ang = 2 * Math.acos(clamp(dq.w, -1, 1)), sn = Math.sqrt(Math.max(1 - dq.w * dq.w, 1e-12));
+  b.angularVelocity.set(dq.x / sn * ang / dt, dq.y / sn * ang / dt, dq.z / sn * ang / dt);
+}
+// Try 2: the plush drops onto the chute's back rail, teeters (a shaped keyframe), and the moment
+// it tips back toward the pile physics takes over again.
+const RAIL_KEYS = spline([[0, 0], [0.05, 0.13], [0.13, -0.08], [0.20, 0.06], [0.26, -0.03], [0.31, -0.30]]);
+function railTeeter(s, t, dt) {
+  const r = s.rail, pb = PLUSH[r.i].body, tl = t - r.t0;
+  const pivot = V3(r.p0.x, MC.rail, 0.0);
+  const zOff = -0.012;
+  const fallT = Math.sqrt(2 * Math.max(r.p0.y - (MC.rail + PL_HALF_T), 0.001) / 9.81);
+  const pose = (tt) => {
+    if (!r.qFlat) { const e = new THREE.Euler().setFromQuaternion(r.q0, 'YXZ'); r.qFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, e.y, 0, 'YXZ')); }
+    const q = r.q0.clone().slerp(r.qFlat, ss(0, fallT, tt)), p = V3();
+    if (tt < fallT) { const y = r.p0.y - 0.5 * 9.81 * tt * tt; p.set(lerp(r.p0.x, pivot.x, tt / fallT), y, lerp(r.p0.z, pivot.z + zOff, tt / fallT)); return { p, q }; }
+    const tb = tt - fallT, beta = RAIL_KEYS(tb)[0] + 0.02 * ring(tb, 0, 9, 18);
+    const rq = new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), beta);
+    p.set(0, PL_HALF_T + 0.004, zOff).applyQuaternion(rq).add(pivot); q.premultiply(rq);
+    return { p, q };
+  };
+  const tEnd = fallT + 0.31;
+  if (!r.landed && tl >= fallT) { r.landed = true; EVENTS.push({ type: 'thump', t, i: r.i, v: 1.1, y: MC.rail }); EVENTS.push({ type: 'railLand', t, i: r.i }); }
+  if (tl < tEnd) {
+    if (pb.type !== CANNON.Body.KINEMATIC) { pb.type = CANNON.Body.KINEMATIC; pb.updateMassProperties(); }
+    const a = pose(tl), b = pose(tl + dt); setKinematic(pb, a.p, a.q, b.p, b.q, dt);
+  } else if (!r.freed) {
+    r.freed = true; pb.type = CANNON.Body.DYNAMIC; pb.updateMassProperties(); pb.wakeUp();
+    pb.angularVelocity.set(-7.5, 0.4, 0); pb.velocity.set(0.05, 0.25, -0.75);
+    EVENTS.push({ type: 'tumble', t, i: r.i }); s.rail = null; s.keepB = { i: r.i, t };
+  }
+}
+
+// ───────────────────────────── sampling the bake ─────────────────────────────
+function recIndex(t) { const f = clamp(t, 0, DUR) * REC_HZ; const i = Math.min(Math.floor(f), REC.n - 2); return [i, f - i]; }
+function plushPose(i, t, outP, outQ) {
+  const [r, u] = recIndex(t), N = PLUSH.length;
+  const a = (r * N + i) * 7, b = ((r + 1) * N + i) * 7, A = REC.pl;
+  outP.set(lerp(A[a], A[b], u), lerp(A[a + 1], A[b + 1], u), lerp(A[a + 2], A[b + 2], u));
+  _q1.set(A[a + 3], A[a + 4], A[a + 5], A[a + 6]); _q2.set(A[b + 3], A[b + 4], A[b + 5], A[b + 6]);
+  outQ.slerpQuaternions(_q1, _q2, u);
+}
+function clawState(t) {
+  const [r, u] = recIndex(t), A = REC.cl, a = r * 12, b = a + 12, o = {};
+  ['cx', 'cz', 'L', 'thx', 'thz', 'a0', 'a1', 'a2', 'vx', 'vz', 'held', 'Lv'].forEach((k, j) => o[k] = lerp(A[a + j], A[b + j], u));
+  o.held = A[a + 10];
+  return o;
+}
+function hubAt(t) { const c = clawState(t); return hubFrame(c.cx, c.cz, c.L, c.thx, c.thz, { pos: V3(), quat: new THREE.Quaternion() }).pos; }
+
+// ───────────────────────────── the hero's performance ─────────────────────────────
+// Eyes lead every move; the body follows them a beat later.
+const COINS = [{ f0: -0.12, f1: 0.20, sink: 0.25 }, { f0: 4.57, f1: 4.85, sink: 4.90 }, { f0: 10.0, f1: 10.27, sink: 10.32 }];
+const PRESS = [2.44, 6.17, 12.54];
+const T = { thunk: 15.70, hop0: 16.42, hop1: 17.0, flap0: 17.56, pull0: 17.86, pull1: 18.26, back1: 18.56, turn1: 18.92, hug: 19.22, blink: 19.46 };
+const FLAPPOS = { x: -0.39 - 7 * H, z: 0.73 }, LAND = { x: -0.62, z: 1.05 }, BACK = { x: -0.39 - 7 * H, z: 0.95 };
+// after the THUNK the prize slides down the bin, shoulders the flap open and pokes out
+const BIN_SLOPE = Math.atan2(0.11, 0.42);
+const POKE = { t0: 15.82, t1: 16.38, p: V3(-0.39, 0.094, 0.47), q: new THREE.Quaternion().setFromAxisAngle(V3(1, 0, 0), BIN_SLOPE).multiply(new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(V3(-1, 0, 0), V3(0, 0, 1), V3(0, 1, 0)))) };
+
+function lookTarget(t, cam) {
+  const hub = hubAt(t);
+  let tgt = hub.clone().add(V3(0, -0.12, 0));
+  const blend = (to, w) => { if (w > 0) tgt.lerp(to, clamp(w)); };
+  blend(SLOT.clone(), win(t, 4.5, 4.6, 4.95, 5.1) + win(t, 9.95, 10.05, 10.35, 10.5) + (t < 0.32 ? 1 - ss(0.25, 0.32, t) : 0) * 0.6);
+  if (t > 3.6 && t < 4.6) { const p = V3(), q = new THREE.Quaternion(); plushPose(0, t, p, q); blend(p, win(t, 3.6, 3.7, 4.2, 4.5)); }
+  if (t > 8.5 && t < 9.4) { const p = V3(), q = new THREE.Quaternion(); plushPose(1, t, p, q); blend(p, win(t, 8.55, 8.7, 9.25, 9.4)); }
+  if (t > 15.2 && t < 16.3) { const p = V3(), q = new THREE.Quaternion(); plushPose(2, Math.min(t, 15.75), p, q); blend(p, win(t, 15.25, 15.4, 15.95, 16.0) + win(t, 16.04, 16.08, 16.16, 16.22)); }
+  if (cam) blend(cam, win(t, 16.18, 16.26, 16.45, 16.6) + win(t, 16.95, 17.05, 17.3, 17.4));
+  blend(V3(-0.39, 0.18, 0.40), win(t, 17.35, 17.5, 18.0, 18.2));
+  return tgt;
+}
+
+function heroPose(t, cam) {
+  const p = { x: HERO0.x, y: HERO0.y, z: HERO0.z, yaw: Math.PI, lean: 0, roll: 0, sq: 1, ex: 0, ey: 0, open: 1, squint: 0, shut: 0, blush: 0, puff: 0,
+    armA: { up: 0, fwd: 0, reach: 0, dx: 0, dy: 0, dz: 0 }, armB: { up: 0, fwd: 0, reach: 0, dx: 0, dy: 0, dz: 0 }, legs: [0, 0, 0, 0], hold: 0 };
+  const hold = (tt) => 1 - win(t, ...tt);
+  // ── base idle breathing
+  p.sq += 0.012 * Math.sin(t * 2 * Math.PI * 0.9) * (1 - win(t, 11.5, 11.7, 15.65, 15.75));
+  // ── 0–1.2 hook: determined, coin in, the machine wakes and its eyes go wide
+  p.squint = 0.55 * (1 - ss(0.3, 0.38, t)) + 0.6 * win(t, 4.62, 4.75, 6.1, 6.3) + 0.4 * win(t, 1.3, 1.5, 2.3, 2.5);
+  p.open += 0.3 * win(t, 0.32, 0.4, 0.75, 1.1) + 0.15 * win(t, 8.6, 8.75, 9.15, 9.2) + 0.14 * win(t, 10.5, 10.8, 15.62, 15.7) + 0.35 * win(t, 15.72, 15.78, 16.0, 16.12);
+  p.sq += 0.06 * win(t, 0.32, 0.38, 0.45, 0.62) - 0.04 * win(t, 0.28, 0.32, 0.33, 0.4);
+  // ── joystick arm (armA) and button arm (armB)
+  const onStick = win(t, 1.02, 1.2, 4.42, 4.6) + win(t, 4.8, 4.98, 8.66, 8.86) + win(t, 10.26, 10.42, 15.36, 15.52);
+  p.armA.fwd = Math.PI / 2 * onStick; p.armA.reach = 2 * H * onStick;
+  const btnW = PRESS.reduce((a, tp) => a + win(t, tp - 0.24, tp - 0.1, tp + 0.18, tp + 0.34), 0);
+  const press = PRESS.reduce((a, tp) => a + win(t, tp - 0.05, tp, tp + 0.04, tp + 0.1), 0);
+  p.armB.fwd = Math.PI / 2 * btnW; p.armB.reach = 2 * H * btnW; p.armB.dy = -0.02 * press;
+  // coin flicks with armB
+  COINS.forEach((c) => { const w = win(t, c.f0 - 0.14, c.f0 - 0.06, c.f0 + 0.04, c.f0 + 0.16); p.armB.fwd += 1.35 * w; p.armB.reach += 1.4 * H * w; p.armB.dx += -0.035 * w; p.armB.up += 0.35 * win(t, c.f0 - 0.04, c.f0, c.f0 + 0.03, c.f0 + 0.1) - 0.12 * w; });
+  // ── try 1: mimes the grab, then the slip; shoulders sag, huff
+  const mime = win(t, 2.98, 3.12, 3.32, 3.5);
+  p.armB.up += 0.55 * mime; p.armB.fwd += 0.9 * mime; p.lean += 0.05 * win(t, 2.5, 2.8, 3.3, 3.5);
+  const sag = win(t, 3.95, 4.15, 4.45, 4.7);
+  p.armB.up -= 0.42 * sag; p.armA.up -= 0.18 * sag * (1 - onStick); p.sq -= 0.05 * sag; p.open -= 0.3 * sag; p.ey -= 0.6 * sag;
+  p.puff += 0.0; p.lean -= 0.03 * win(t, 4.2, 4.25, 4.3, 4.5);
+  // ── try 2: leans with the carry, then leans in to watch the rail… BONK
+  if (t > 6.2 && t < 9.0) { const c = clawState(t); p.roll += clamp(c.vx * 0.55, -0.12, 0.12) * win(t, 6.3, 6.6, 8.5, 8.9); }
+  const bonk = GLASS.hitT;
+  const leanIn = 0.16 * ss(8.6, 9.08, t) + (LEAN_HIT - 0.16) * sm(9.08, bonk, t);
+  p.lean += t < bonk ? leanIn : LEAN_HIT * Math.exp(-(t - bonk) * 9) * Math.cos((t - bonk) * 22) * (1 - ss(bonk, bonk + 0.05, t)) + (-0.06) * win(t, bonk, bonk + 0.05, bonk + 0.25, bonk + 0.5) + LEAN_HIT * (1 - ss(bonk, bonk + 0.05, t));
+  p.armA.up += 0.25 * win(t, 8.8, 9.1, bonk, bonk + 0.2); p.armB.up += 0.2 * win(t, 8.8, 9.1, bonk, bonk + 0.2);
+  // dazed: eyes wobble, a slow blink, rub the forehead with armB
+  const daze = win(t, bonk + 0.04, bonk + 0.15, 9.95, 10.1);
+  p.ex += 0.7 * daze * Math.sin((t - bonk) * 13); p.ey += 0.5 * daze * Math.cos((t - bonk) * 13);
+  p.shut += win(t, 9.42, 9.5, 9.56, 9.66) + 0.8 * win(t, 9.74, 9.8, 9.84, 9.92);
+  const rub = win(t, 9.34, 9.48, 9.88, 10.0);
+  p.armB.up += 1.45 * rub; p.armB.fwd += 1.05 * rub + 0.12 * rub * Math.sin((t - 9.4) * 26); p.armB.reach += 1.0 * H * rub;
+  p.roll += 0.05 * daze * Math.sin((t - bonk) * 9);
+  // ── try 3: tiny nudges, then a held breath (puffed cheeks, stillness)
+  const breath = win(t, 11.55, 11.75, 15.7, 15.82);
+  p.puff = breath; p.sq += 0.02 * breath;
+  // breath out, take, double take
+  p.sq -= 0.07 * win(t, 15.74, 15.8, 15.86, 16.0);
+  p.lean -= 0.06 * win(t, 15.72, 15.78, 15.9, 16.05);
+  p.armA.up += 0.4 * win(t, 15.72, 15.78, 15.9, 16.05); p.armB.up += 0.4 * win(t, 15.72, 15.78, 15.9, 16.05);
+  // ── look at us, victory hop with a twirl, wiggle
+  const camYaw = cam ? Math.atan2(cam.x - HERO0.x, cam.z - HERO0.z) : 0;
+  const scoot = ss(16.02, 16.2, t); p.z += 0.13 * scoot;
+  const turnToCam = ss(16.2, 16.36, t);
+  let yaw = lerpAngle(Math.PI, camYaw, turnToCam);
+  if (t >= T.hop0) {
+    const u = clamp((t - T.hop0) / (T.hop1 - T.hop0));
+    const landYaw = camYaw + 2 * Math.PI;
+    yaw = lerp(camYaw, landYaw, sm(0, 1, u));
+    // jump out away from the machine first, then across
+    const ux = sm(0.12, 1, u), uz = sm(0, 0.6, u);
+    p.x = lerp(HERO0.x, LAND.x, ux); p.z = lerp(HERO0.z + 0.13, LAND.z, uz);
+    p.y = lerp(HERO0.y, 0, ss(0.15, 1, u)) + 0.38 * Math.sin(Math.PI * Math.min(u * 1.08, 1));
+    p.sq += -0.12 * win(t, T.hop0 - 0.08, T.hop0 - 0.02, T.hop0, T.hop0 + 0.04) + 0.12 * win(t, T.hop0, T.hop0 + 0.05, T.hop0 + 0.2, T.hop0 + 0.35);
+    p.armA.up += 0.95 * win(t, T.hop0, T.hop0 + 0.08, T.hop1 - 0.1, T.hop1 + 0.05); p.armB.up += 0.95 * win(t, T.hop0, T.hop0 + 0.08, T.hop1 - 0.1, T.hop1 + 0.05);
+    p.legs = [1, 1, 1, 1].map(() => 0.02 * win(t, T.hop0 + 0.05, T.hop0 + 0.15, T.hop1 - 0.15, T.hop1 - 0.05));
+  }
+  p.sq += -0.1 * win(t, T.hop1 - 0.01, T.hop1 + 0.03, T.hop1 + 0.06, T.hop1 + 0.2);
+  p.sq += -0.06 * win(t, T.hop0 - 0.2, T.hop0 - 0.1, T.hop0 - 0.05, T.hop0);
+  // victory wiggle on landing, then turn to the machine and walk to the flap
+  const wig = win(t, T.hop1 + 0.04, T.hop1 + 0.1, 17.28, 17.36);
+  p.roll += 0.13 * wig * Math.sin((t - T.hop1) * 30);
+  p.armA.up += 0.7 * wig * (0.5 + 0.5 * Math.sin((t - T.hop1) * 30)); p.armB.up += 0.7 * wig * (0.5 - 0.5 * Math.sin((t - T.hop1) * 30));
+  p.shut += 0.75 * win(t, T.hop0 + 0.1, T.hop0 + 0.2, 17.25, 17.33);
+  if (t >= T.hop1) {
+    const toFlap = sm(17.32, T.flap0, t);
+    yaw = lerpAngle(camYaw + 2 * Math.PI, 3 * Math.PI, sm(17.3, 17.5, t));
+    p.x = lerp(LAND.x, FLAPPOS.x, toFlap); p.z = lerp(LAND.z, FLAPPOS.z, toFlap); p.y = 0.04 * Math.abs(Math.sin(Math.PI * 2 * clamp((t - 17.32) / (T.flap0 - 17.32))));
+    // bend down to the prize poking out of the flap, pull it out, straighten up, turn round, hug
+    const bend = win(t, T.flap0 - 0.04, T.flap0 + 0.2, T.pull1 - 0.05, T.back1);
+    p.armA.fwd = Math.PI / 2 * (win(t, T.flap0 - 0.08, T.flap0 + 0.1, T.turn1, T.turn1 + 0.15));
+    p.armA.reach = 1.0 * H * win(t, T.flap0, T.flap0 + 0.2, T.turn1, T.turn1 + 0.15);
+    p.armA.up -= 0.42 * bend;
+    p.sq -= 0.17 * bend; p.lean += 0.12 * bend;
+    const back = sm(T.pull0 + 0.02, T.back1, t);
+    p.x = lerp(p.x, BACK.x, back); p.z = lerp(p.z, BACK.z, back);
+    yaw = lerp(yaw, 4 * Math.PI, sm(T.back1, T.turn1, t));
+    p.hold = ss(T.pull0, T.pull0 + 0.05, t);
+  }
+  // hug: arms wrap, eyes shut, blush, rocking
+  const hug = ss(T.turn1, T.hug, t);
+  p.armA.fwd = lerp(p.armA.fwd, Math.PI / 2 + 0.18, hug); p.armB.fwd = lerp(p.armB.fwd, Math.PI / 2 + 0.18, hug);
+  p.armA.reach = lerp(p.armA.reach, 1.0 * H, hug); p.armB.reach = lerp(p.armB.reach, 1.0 * H, hug);
+  p.armA.dx = lerp(p.armA.dx, 1.5 * H, hug); p.armB.dx = lerp(p.armB.dx, -1.5 * H, hug);
+  p.armA.up = lerp(p.armA.up, -0.12, hug); p.armB.up = lerp(p.armB.up, -0.12, hug);
+  p.shut = lerp(p.shut, 0.9, ss(T.hug - 0.05, T.hug + 0.1, t));
+  p.blush = ss(T.hug - 0.1, T.hug + 0.25, t);
+  p.roll += 0.06 * Math.sin((t - T.hug) * 2 * Math.PI * 0.9) * ss(T.hug, T.hug + 0.3, t);
+  p.yaw = yaw;
+  // ── eyes lead: look target in hero-local space
+  return p;
+}
+function lerpAngle(a, b, u) { let d = ((b - a) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; return a + d * u; }
+let LEAN_HIT = 0.38;
+
+// Apply a pose to the rig; then aim the eyes in local space.
+const _inv = new THREE.Matrix4();
+function applyHero(t, cam) {
+  const p = heroPose(t, cam);
+  const R = HERO.root; R.position.set(p.x, p.y, p.z); R.rotation.set(0, p.yaw, 0);
+  const pz = p.lean >= 0 ? 2 * H : -2 * H, px = p.roll >= 0 ? -6 * H : 6 * H;
+  HERO.leanPivot.position.set(px, 0, pz); HERO.leanBack.position.set(-px, 0, -pz);
+  HERO.leanPivot.rotation.set(p.lean, 0, p.roll, 'XZY');
+  const sx = 1 / Math.sqrt(p.sq) * (1 + 0.035 * p.puff);
+  HERO.squash.scale.set(sx, p.sq, sx * (1 + 0.02 * p.puff));
+  for (const nm of ['armA', 'armB']) {
+    const a = HERO.arms[nm], q = p[nm], s = a.sgn;
+    a.piv.rotation.set(0, -s * q.fwd, s * q.up);
+    a.off.position.set(q.dx, q.dy, q.reach * 0 + q.dz);
+    // reach slides the arm along the hero's front axis
+    a.piv.position.set(s * 7 * H, 7 * H, q.reach);
+  }
+  HERO.legs.forEach((l, i) => l.position.y = 3 * H + (p.legs[i] || 0));
+  R.updateMatrixWorld(true);
+  // eyes
+  const tgt = lookTarget(t, cam);
+  _inv.copy(HERO.squash.matrixWorld).invert();
+  const lt = tgt.clone().applyMatrix4(_inv).sub(V3(0, 8.5 * H, 3 * H));
+  let ex = clamp(Math.atan2(lt.x, Math.max(lt.z, 0.05)) / 0.7, -1, 1) * 1.1, ey = clamp(Math.atan2(lt.y, Math.max(lt.z, 0.05)) / 0.6, -1, 1) * 0.9;
+  ex += p.ex; ey += p.ey;
+  const blinkT = [1.9, 5.3, 7.8, 13.1].reduce((a, b) => a + win(t, b, b + 0.04, b + 0.07, b + 0.12), 0);
+  const shut = clamp(p.shut + blinkT * (1 - p.puff));
+  HERO.eyes.forEach((e, i) => {
+    const sy = Math.max(0.1, p.open * (1 - 0.42 * p.squint) * (1 - 0.88 * shut));
+    e.scale.set(1 + 0.08 * (p.open - 1), sy, 1);
+    e.position.set((i ? 3 : -3) * H + ex * 0.55 * H, 8.5 * H + ey * 0.5 * H - (1 - sy) * 1.5 * H * 0.6 * (p.squint > 0.01 ? 1 : 0.2), 3 * H + 0.12 * H);
+  });
+  // an arm lifts whenever it would sink into the joystick or the button
+  for (const [arm, part] of [[HERO.arms.armA, 'joystick'], [HERO.arms.armB, 'button']]) {
+    const so = SOLIDS.find(x => x.name === part), sa = SOLIDS.find(x => x.obj === arm.mesh);
+    for (let k = 0; k < 3; k++) {
+      R.updateMatrixWorld(true);
+      const pen = obbPen(obbFrom(arm.mesh.matrixWorld, sa.box), obbFrom(so.obj.matrixWorld, so.box));
+      if (pen <= 0) break;
+      arm.off.position.y += pen + 0.0015;
+    }
+  }
+  HERO.cheeks.forEach(c => { const b = Math.max(p.blush, 0.6 * p.puff); c.scale.set(Math.max(b, 0.001), Math.max(b, 0.001), 1); c.visible = b > 0.01; });
+  R.updateMatrixWorld(true);
+  return p;
+}
+
+// ───────────────────────────── camera: one continuous move ─────────────────────────────
+// pull back from the hook, through the glass for the claw, inside the machine for the bonk,
+// top-down into the pile, slow macro carry, low on the drop, warm medium hug.
+const CAMK = spline([
+  //  t      px     py     pz     tx     ty     tz    fov  coc
+  [0.00, 0.12, 1.16, -0.02, 0.20, 1.14, 0.65, 36, 9],
+  [0.55, 0.11, 1.17, -0.05, 0.19, 1.14, 0.64, 37, 9],
+  [1.40, 0.05, 1.26, -0.20, 0.15, 1.12, 0.50, 40, 10],
+  [2.60, 0.05, 1.36, -0.34, 0.24, 1.02, 0.30, 42, 10],
+  [4.40, 0.00, 1.35, -0.36, 0.12, 1.04, 0.30, 42, 10],
+  [6.10, -0.25, 1.32, -0.38, -0.06, 1.04, 0.30, 42, 10],
+  [8.40, -0.42, 1.25, -0.30, -0.12, 1.08, 0.33, 40, 11],
+  [9.05, -0.36, 1.22, 0.00, 0.12, 1.22, 0.42, 36, 11],
+  [9.95, -0.20, 1.19, 0.06, 0.20, 1.19, 0.52, 34, 11],
+  [10.70, 0.20, 1.15, 0.03, 0.20, 1.13, 0.65, 38, 10],
+  [12.50, 0.20, 1.15, 0.05, 0.20, 1.13, 0.65, 36, 10],
+  [13.35, 0.32, 1.55, -0.10, 0.36, 0.98, -0.22, 46, 8],
+  [13.95, 0.34, 1.50, -0.06, 0.36, 1.08, -0.20, 46, 8],
+  [15.22, -0.24, 1.32, 0.06, -0.38, 1.05, 0.26, 44, 9],
+  [15.50, -0.20, 1.04, 0.00, -0.38, 0.88, 0.30, 44, 9],
+  [15.85, -0.06, 1.13, 0.06, 0.20, 1.14, 0.62, 38, 10],
+  [16.05, -0.36, 1.20, 0.26, 0.14, 1.12, 0.66, 40, 10],
+  [16.18, -0.68, 1.16, 1.00, 0.10, 1.06, 0.74, 42, 9],
+  [16.34, -0.30, 0.98, 1.62, 0.08, 1.05, 0.75, 40, 8],
+  [17.05, 0.15, 0.95, 1.55, -0.55, 0.32, 0.72, 42, 8],
+  [18.20, 0.25, 0.75, 1.65, -0.60, 0.30, 0.80, 40, 8],
+  [19.05, -0.25, 0.48, 1.95, -0.64, 0.30, 0.92, 36, 9],
+  [20.00, -0.45, 0.38, 1.75, -0.64, 0.30, 0.92, 33, 10],
+]);
+// The slow macro carry rides along with the prize.
+function cameraAt(t) {
+  const k = CAMK(t);
+  const pos = V3(k[0], k[1], k[2]), tgt = V3(k[3], k[4], k[5]);
+  let fov = k[6], coc = k[7];
+  // top-down into the pile, centred on where the prize really is
+  const wT = win(t, 12.7, 13.2, 13.9, 14.3);
+  if (wT > 0) {
+    const cp = V3(), cq = new THREE.Quaternion(); plushPose(2, 13.4, cp, cq);
+    pos.lerp(cp.clone().add(V3(0.08, 0.5, 0.2)), wT); tgt.lerp(cp, wT);
+  }
+  const wM = win(t, 14.5, 14.85, 15.08, 15.32);
+  if (wM > 0) {
+    const pp = V3(), pq = new THREE.Quaternion(); plushPose(2, t, pp, pq);
+    const mp = pp.clone().add(V3(0.16, 0.07, -0.30)); mp.z = Math.max(mp.z, -0.41); mp.x = Math.min(mp.x, 0.56);
+    pos.lerp(mp, wM); tgt.lerp(pp.clone().add(V3(-0.04, -0.01, 0.25)), wM);
+    fov = lerp(fov, 42, wM);
+  }
+  // focus on the subject the camera looks at
+  return { pos, tgt, fov, coc, focus: pos.distanceTo(tgt) };
+}
+
+// ───────────────────────────── lights ─────────────────────────────
+const LIGHTS = {};
+function buildLights() {
+  LIGHTS.hemi = new THREE.HemisphereLight(0x9aa6d8, 0x2a2030, 1.1); scene.add(LIGHTS.hemi);
+  // bright white top light inside the machine: lights the pile, casts the claw's shadow
+  const top = new THREE.SpotLight(0xfff8f0, 7.0, 0, 1.05, 0.65, 2);
+  top.position.set(0.02, MC.gTop - 0.03, -0.02); top.target.position.set(0.04, MC.pf, 0.06);
+  top.castShadow = true; top.shadow.mapSize.set(1024, 1024); top.shadow.camera.near = 0.05; top.shadow.camera.far = 1.5; top.shadow.bias = -0.0004; top.shadow.normalBias = 0.006;
+  scene.add(top, top.target); LIGHTS.top = top;
+  // neutral key: from inside the machine, through the glass onto the hero's face
+  const key = new THREE.SpotLight(0xffffff, 3.7, 0, 0.42, 0.7, 2);
+  key.position.set(0.16, 1.56, -0.32); key.target.position.set(0.2, 1.14, 0.65);
+  scene.add(key, key.target); LIGHTS.key = key;
+  // warm LED strip
+  const led = new THREE.PointLight(0xffa866, 1.4, 2.0, 2); led.position.set(0, 1.56, 0.32); scene.add(led); LIGHTS.led = led;
+  // arcade key from the front (outside shots)
+  const out = new THREE.DirectionalLight(0xffffff, 4.4);
+  out.position.set(1.0, 3.2, 3.4); out.target.position.set(-0.3, 0.4, 0.8);
+  out.castShadow = true; out.shadow.mapSize.set(2048, 2048);
+  Object.assign(out.shadow.camera, { left: -1.6, right: 1.6, top: 1.6, bottom: -1.1, near: 0.5, far: 8 });
+  out.shadow.bias = -0.0005; out.shadow.normalBias = 0.012;
+  scene.add(out, out.target); LIGHTS.out = out;
+  // soft front fill for the hug outside
+  const fill = new THREE.PointLight(0xfff8f2, 1.9, 2.6, 2); fill.position.set(-0.35, 0.95, 1.95); scene.add(fill); LIGHTS.fill = fill;
+  // marquee glow
+  const mq = new THREE.PointLight(0xffd59a, 0.8, 3.0, 2); mq.position.set(0, 2.0, 0.85); scene.add(mq); LIGHTS.mq = mq;
+  // cool rim from the arcade behind the hero
+  const rim = new THREE.PointLight(0x7fb6ff, 2.0, 5, 2); rim.position.set(0.9, 1.5, 2.3); scene.add(rim); LIGHTS.rim = rim;
+}
+
+// ───────────────────────────── machine state over time ─────────────────────────────
+function bulbLevel(i, t) {
+  const n = MACH.nMarquee;
+  const onMarq = i < n;
+  const ph = onMarq ? i / n : (i - n) / 18;
+  const wake = ss(0.3 + ph * 0.45, 0.36 + ph * 0.45, t);
+  let lvl = 0.06 + wake * 0.5;
+  const chase = 0.5 + 0.5 * Math.cos(2 * Math.PI * (ph * 6 - t * 1.4));
+  lvl += wake * 0.6 * chase * (1 - win(t, 10.1, 10.4, 15.6, 15.72));
+  const beat = heartbeat(t);
+  lvl = lerp(lvl, 0.18 + 0.5 * beat, win(t, 10.1, 10.4, 15.6, 15.72));
+  const winP = win(t, 15.72, 15.75, 17.2, 17.8);
+  const fast = 0.5 + 0.5 * Math.sign(Math.sin(2 * Math.PI * (ph * 10 - t * 5)));
+  lvl = lerp(lvl, 0.35 + 1.1 * fast, winP);
+  return lvl;
+}
+function heartbeat(t) {
+  if (t < 10.2 || t > 15.7) return 0;
+  const bpm = lerp(78, 104, ss(10.2, 15.6, t));
+  const ph = ((t - 10.2) * bpm / 60) % 1;
+  return Math.exp(-ph * 30) + 0.6 * Math.exp(-Math.max(ph - 0.18, 0) * 30) * (ph > 0.18 ? 1 : 0);
+}
+const _col = new THREE.Color();
+function applyMachine(t, c, hubF) {
+  // bulbs
+  for (let i = 0; i < MACH.bulbPos.length; i++) {
+    const l = bulbLevel(i, t);
+    _col.setRGB(1.0 * l * 4.2, 0.82 * l * 4.2, 0.55 * l * 4.2);
+    MACH.bulbs.setColorAt(i, _col);
+  }
+  MACH.bulbs.instanceColor.needsUpdate = true;
+  const awake = ss(0.3, 0.75, t);
+  const flick = t > 0.3 && t < 0.75 ? (hash(Math.floor(t * 30)) > 0.4 ? 1 : 0.4) : 1;
+  const mqL = (0.2 + 0.8 * awake * flick) * (1 - 0.35 * win(t, 10.1, 10.4, 15.6, 15.72)) * (1 + 0.5 * win(t, 15.72, 15.76, 16.8, 17.6));
+  MACH.letters.material.color.setRGB(4.2 * mqL, 3.5 * mqL, 2.4 * mqL);
+  MACH.mqFace.material.color.setRGB(0.06 + 0.06 * mqL, 0.22 + 0.2 * mqL, 0.2 + 0.18 * mqL);
+  LIGHTS.mq.intensity = 0.35 + 0.9 * mqL;
+  LIGHTS.led.intensity = 1.1 + 0.6 * awake;
+  MACH.coinLight.material.color.setRGB(2.5 * (0.3 + 0.7 * awake), 1.9 * (0.3 + 0.7 * awake), 0.6);
+  // gantry
+  MACH.bridge.position.x = c.cx;
+  MACH.carriage.position.set(c.cx, MC.gantryY - 0.02, c.cz);
+  const top = V3(c.cx, MC.gantryY - 0.035, c.cz), bot = hubF.pos.clone().add(V3(0, HUB_H / 2 + 0.03, 0).applyQuaternion(hubF.quat));
+  MACH.cable.position.copy(top).add(bot).multiplyScalar(0.5);
+  MACH.cable.scale.set(1, top.distanceTo(bot), 1);
+  MACH.cable.quaternion.setFromUnitVectors(V3(0, 1, 0), top.clone().sub(bot).normalize());
+  // joystick tilts the way the gantry moves
+  const jx = clamp(c.vx / 0.45, -1, 1), jz = clamp(c.vz / 0.45, -1, 1);
+  MACH.joyPivot.rotation.set(clamp(jz * 0.3, -0.3, 0.11), 0, clamp(-jx * 0.3, -0.3, 0.2));
+  // button cap
+  const press = PRESS.reduce((a, tp) => a + win(t, tp - 0.02, tp, tp + 0.05, tp + 0.1), 0);
+  MACH.cap.position.y = BTN.y + 0.135 - 0.011 * press;
+  // flap swings in over the prize as the arm reaches, rides on it, then clacks shut
+}
+
+// ───────────────────────────── coins ─────────────────────────────
+const COINM = [];
+function buildCoins() {
+  const cells = [], inner = [];
+  ['..###..', '.#####.', '#######', '#######', '#######', '.#####.', '..###..'].forEach((row, r) => row.split('').forEach((v, c) => {
+    if (v !== '#') return; const isIn = r >= 2 && r <= 4 && c >= 2 && c <= 4 && !(r === 3 && c === 3); (isIn ? inner : cells).push([c - 3, 0, r - 3]);
+  }));
+  const s = 0.0082;
+  const g1 = voxGeo(cells, s, s * 0.18, [-s / 2, -s / 2, -s / 2]), g2 = voxGeo(inner, s, s * 0.18, [-s / 2, -s * 0.62, -s / 2]);
+  const m1 = std(PAL.yellow, 0.22, 0.85), m2 = std(0xd99a2b, 0.3, 0.8);
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group(); g.add(new THREE.Mesh(g1, m1), new THREE.Mesh(g2, m2)); g.children.forEach(m => m.castShadow = true); scene.add(g); COINM.push(g);
+    addSolid('coin' + i, g, new THREE.Box3(V3(-3.5 * s, -0.5 * s, -3.5 * s), V3(3.5 * s, 0.5 * s, 3.5 * s)), 'coin');
+  }
+}
+function applyCoins(t) {
+  COINS.forEach((c, k) => {
+    const g = COINM[k], stackY = STACK.y + 0.0042 + (2 - k) * 0.0085;
+    g.visible = t < c.sink;
+    if (t < c.f0) { g.position.set(STACK.x, stackY, STACK.z); g.rotation.set(0, 0, 0); return; }
+    const u = clamp((t - c.f0) / (c.f1 - c.f0));
+    const a = V3(STACK.x, stackY, STACK.z), b = V3(SLOT.x, SLOT.y + 0.03, SLOT.z);
+    g.position.lerpVectors(a, b, u); g.position.y += 0.16 * Math.sin(Math.PI * u);
+    g.rotation.set(lerp(0, 3.5 * Math.PI, sm(0, 1, u)), 0, 0);
+    if (t > c.f1) { const v = clamp((t - c.f1) / (c.sink - c.f1)); g.position.set(SLOT.x, SLOT.y + 0.03 - 0.05 * v * v, SLOT.z); g.rotation.set(Math.PI / 2, 0, 0); }
+  });
+}
+
+// ───────────────────────────── puffs (huff, breath out) ─────────────────────────────
+const PUFFS = [];
+function buildPuffs() {
+  const tex = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+  for (let i = 0; i < 10; i++) {
+    const m = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xe8eef2, transparent: true, depthWrite: false, opacity: 0 }));
+    scene.add(m); PUFFS.push(m);
+  }
+}
+function applyPuffs(t) {
+  const shots = [[4.24, 5], [15.76, 5]];
+  PUFFS.forEach((s, i) => {
+    const [t0] = shots[i < 5 ? 0 : 1]; const j = i % 5, dt = t - t0 - j * 0.025;
+    if (dt < 0 || dt > 0.6) { s.visible = false; return; }
+    s.visible = true;
+    const o = V3((j - 2) * 0.03, 6.0 * H + j * 0.004, 3.4 * H + dt * 0.35).applyMatrix4(HERO.squash.matrixWorld);
+    s.position.copy(o); s.scale.setScalar(0.03 + dt * 0.14);
+    s.material.opacity = 0.55 * (1 - dt / 0.6) * ss(0, 0.05, dt);
+  });
+}
+
+// ───────────────────────────── plush on screen ─────────────────────────────
+const IMPACTS = PLUSH;   // filled after bake
+function applyPlush(t) {
+  const p = V3(), q = new THREE.Quaternion();
+  PLUSH.forEach((pl, i) => {
+    plushPose(i, t, p, q);
+    pl.group.position.copy(p); pl.group.quaternion.copy(q);
+    // landings squash the plush that lands, along its most vertical axis
+    let sq = 0;
+    for (const e of pl.impacts) { const dt = t - e.t; if (dt < 0 || dt > 0.5) continue; sq += Math.min(e.v, 2.5) * 0.06 * Math.exp(-dt * 11) * Math.cos(dt * 34); }
+    const up = V3(0, 1, 0).applyQuaternion(q.clone().invert());
+    const ax = Math.abs(up.x) > Math.abs(up.y) ? (Math.abs(up.x) > Math.abs(up.z) ? 'x' : 'z') : (Math.abs(up.y) > Math.abs(up.z) ? 'y' : 'z');
+    pl.sq.scale.set(1, 1, 1); pl.sq.scale[ax] = 1 - sq; for (const k of ['x', 'y', 'z']) if (k !== ax) pl.sq.scale[k] = 1 + sq * 0.5;
+  });
+  // the prize leaves the bin in the hero's arm and ends in the hug
+  const C = PLUSH[2];
+  if (t > POKE.t0 && t <= T.pull0 - 0.02) {
+    const bp = V3(), bq = new THREE.Quaternion(); plushPose(2, POKE.t0, bp, bq);
+    // first it settles flat on the slope, then it slides out under the flap
+    const ur = sm(POKE.t0, POKE.t0 + 0.18, t), u = sm(POKE.t0 + 0.08, POKE.t1, t);
+    C.group.position.lerpVectors(bp, POKE.p, u); C.group.position.y += 0.012 * Math.sin(Math.PI * u);
+    C.group.quaternion.slerpQuaternions(bq, POKE.q, ur);
+  }
+  if (t > T.pull0 - 0.02) {
+    const tip = HERO.arms.armA.tip, held = new THREE.Matrix4();
+    // held at the tip of the arm: plush upright, facing the hero's front
+    const tipM = tip.matrixWorld.clone();
+    const tipP = V3().setFromMatrixPosition(tipM);
+    const heroQ = new THREE.Quaternion(); HERO.squash.getWorldQuaternion(heroQ);
+    const fwd = V3(0, 0, 1).applyQuaternion(heroQ);
+    const heldP = tipP.clone().addScaledVector(fwd, 0.135).add(V3(0, -0.05, 0));
+    const heldQ = heroQ.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0.25)));
+    // hug pose in front of the chest
+    const hugP = V3(0, 6.6 * H, 3 * H + PL_HALF_T + 0.008).applyMatrix4(HERO.squash.matrixWorld);
+    const hugQ = heroQ.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-0.08, 0, 0)));
+    const binP = POKE.p.clone(), binQ = POKE.q.clone();
+    const u1 = sm(T.pull1 + 0.02, T.back1 + 0.04, t), u2 = sm(T.turn1, T.hug, t);   // lift only once it is clear of the flap
+    // while it is pulled the prize slides straight out of the flap with the hero
+    const slide = binP.clone().add(V3(0, 0, Math.max(0, HERO.root.position.z - FLAPPOS.z)));
+    const P1 = slide.lerp(heldP, u1), Q1 = binQ.clone().slerp(heldQ, u1);
+    C.group.position.copy(P1.lerp(hugP, u2)).addScaledVector(fwd, 0.09 * Math.sin(Math.PI * u2)); C.group.quaternion.copy(Q1.slerp(hugQ, u2));
+    const squeeze = ss(T.hug - 0.1, T.hug + 0.15, t) * (0.06 + 0.02 * Math.sin((t - T.hug) * 2 * Math.PI * 0.9));
+    C.sq.scale.set(1 - squeeze, 1 + squeeze * 0.4, 1 - squeeze * 0.3);
+  }
+  // …and the plush slowly blinks at us
+  const bl = win(t, T.blink, T.blink + 0.22, T.blink + 0.36, T.blink + 0.62);
+  C.eyes.forEach(e => e.scale.y = Math.max(0.12, 1 - 0.88 * bl));
+}
+
+// The flap opens exactly as far as the prize pushes it and rests on it; once the prize is
+// out it drops shut and rattles.
+const FLAP = { drop: null, last: 0 };
+function flapHits(fa) {
+  const fs = SOLIDS.find(x => x.name === 'flap'), C = PLUSH[2];
+  C.group.updateMatrixWorld(true);
+  MACH.flapPivot.rotation.x = -fa; MACH.flapPivot.updateMatrixWorld(true);
+  const fo = obbFrom(fs.obj.matrixWorld, fs.box);
+  return C.shapes.some(b => obbPen(fo, obbFrom(C.group.matrixWorld, b)) > 0.0005);
+}
+function flapContact() { let fa = 0; while (fa < 1.3 && flapHits(fa)) fa += 0.01; return fa; }
+function applyFlap(t) {
+  let fa = 0;
+  if (FLAP.drop !== null && t >= FLAP.drop) {
+    const u = (t - FLAP.drop) / 0.13; fa = u < 1 ? FLAP.last * (1 - u * u) : 0.07 * ring(t, FLAP.drop + 0.13, 7, 8);
+    while (fa > 0 && t < T.hug && flapHits(fa)) fa -= 0.01;    // swinging shut, it never cuts through the prize
+  }
+  if (t > POKE.t0 && t < T.hug) fa = Math.max(fa, flapContact());
+  fa -= 0.05 * ring(t, T.thunkReal ?? T.thunk, 9, 10);
+  MACH.flapPivot.rotation.x = -fa; MACH.flapPivot.updateMatrixWorld(true);
+}
+
+// ───────────────────────────── post: accumulate → DOF → bloom → tone map ─────────────────────────────
+const RT = {};
+const FSQ = new THREE.BufferGeometry(); FSQ.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
+const postCam = new THREE.Camera();
+const VS = `out vec2 vUv; void main(){ vUv=position.xy*0.5+0.5; gl_Position=vec4(position.xy,0.0,1.0); }`;
+function pass(frag, uniforms, opts = {}) {
+  const m = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: 'precision highp float;\nin vec3 position;\n' + VS,
+    fragmentShader: 'precision highp float;\nin vec2 vUv; out vec4 o;\n' + frag, uniforms, depthTest: false, depthWrite: false, ...opts });
+  const mesh = new THREE.Mesh(FSQ, m); mesh.frustumCulled = false;
+  const sc = new THREE.Scene(); sc.add(mesh);
+  return { m, run: (target) => { renderer.setRenderTarget(target); renderer.render(sc, postCam); } };
+}
+function buildPost() {
+  const hf = { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false };
+  RT.scene = new THREE.WebGLRenderTarget(W, HGT, { type: THREE.HalfFloatType, depthTexture: new THREE.DepthTexture(W, HGT, THREE.UnsignedIntType) });
+  RT.acc = new THREE.WebGLRenderTarget(W, HGT, hf);
+  RT.half = new THREE.WebGLRenderTarget(W / 2, HGT / 2, hf);
+  RT.dof = new THREE.WebGLRenderTarget(W / 2, HGT / 2, hf);
+  RT.bloom = [4, 8, 16, 32, 64].map(d => new THREE.WebGLRenderTarget(Math.ceil(W / d), Math.ceil(HGT / d), hf));
+  RT.bloomUp = [4, 8, 16, 32].map(d => new THREE.WebGLRenderTarget(Math.ceil(W / d), Math.ceil(HGT / d), hf));
+  RT.accum = pass(`uniform sampler2D uC, uD; uniform float uW, uNear, uFar, uCenter;
+    void main(){ vec3 c=texture(uC,vUv).rgb; float d=texture(uD,vUv).r; float z=d*2.0-1.0;
+      float lin=2.0*uNear*uFar/(uFar+uNear-z*(uFar-uNear)); o=vec4(c*uW, uCenter*lin); }`,
+    { uC: { value: RT.scene.texture }, uD: { value: RT.scene.depthTexture }, uW: { value: 1 }, uNear: { value: 0.01 }, uFar: { value: 40 }, uCenter: { value: 1 } },
+    { blending: THREE.AdditiveBlending, transparent: true });
+  RT.coc = pass(`uniform sampler2D uA; uniform vec2 uPx; uniform float uFocus, uK, uMax;
+    float coc(float z){ return clamp(uK*(z-uFocus)/max(z,1e-3), -uMax, uMax); }
+    void main(){ vec2 d=uPx*0.5; vec4 a=texture(uA,vUv+vec2(-d.x,-d.y)), b=texture(uA,vUv+vec2(d.x,-d.y)), c=texture(uA,vUv+vec2(-d.x,d.y)), e=texture(uA,vUv+vec2(d.x,d.y));
+      float zmin=min(min(a.a,b.a),min(c.a,e.a)); o=vec4((a.rgb+b.rgb+c.rgb+e.rgb)*0.25, coc(zmin)*0.5); }`,
+    { uA: { value: RT.acc.texture }, uPx: { value: new THREE.Vector2(1 / W, 1 / HGT) }, uFocus: { value: 1 }, uK: { value: 8 }, uMax: { value: 18 } });
+  RT.gather = pass(`uniform sampler2D uH; uniform vec2 uPx; uniform float uMax;
+    const float GA=2.39996323;
+    void main(){ vec4 cc=texture(uH,vUv); float cs=abs(cc.a); vec3 col=cc.rgb; float tot=1.0;
+      float r=0.5; for(int i=0;i<96;i++){ if(r>uMax) break; float a=float(i)*GA;
+        vec2 tc=vUv+vec2(cos(a),sin(a))*uPx*r; vec4 s=texture(uH,tc); float ssz=abs(s.a);
+        if(s.a>cc.a) ssz=clamp(ssz,0.0,cs*2.0);
+        float m=smoothstep(r-0.5,r+0.5,ssz); col+=mix(col/tot,s.rgb,m); tot+=1.0; r+=1.1/r; }
+      o=vec4(col/tot, cc.a); }`,
+    { uH: { value: RT.half.texture }, uPx: { value: new THREE.Vector2(2 / W, 2 / HGT) }, uMax: { value: 9 } });
+  RT.down = pass(`uniform sampler2D uS; uniform vec2 uPx; uniform float uThr;
+    void main(){ vec2 d=uPx; vec3 c=texture(uS,vUv).rgb*4.0+texture(uS,vUv+vec2(-d.x,-d.y)).rgb+texture(uS,vUv+vec2(d.x,-d.y)).rgb+texture(uS,vUv+vec2(-d.x,d.y)).rgb+texture(uS,vUv+vec2(d.x,d.y)).rgb;
+      c/=8.0; if(uThr>0.0){ float l=max(c.r,max(c.g,c.b)); c*=max(l-uThr,0.0)/max(l,1e-4); } o=vec4(c,1.0); }`,
+    { uS: { value: null }, uPx: { value: new THREE.Vector2() }, uThr: { value: 0 } });
+  RT.up = pass(`uniform sampler2D uS, uB; uniform vec2 uPx;
+    void main(){ vec2 d=uPx; vec3 c=texture(uS,vUv+vec2(-d.x,0)).rgb+texture(uS,vUv+vec2(d.x,0)).rgb+texture(uS,vUv+vec2(0,-d.y)).rgb+texture(uS,vUv+vec2(0,d.y)).rgb;
+      c=c*0.25; o=vec4(c+texture(uB,vUv).rgb,1.0); }`,
+    { uS: { value: null }, uB: { value: null }, uPx: { value: new THREE.Vector2() } });
+  RT.final = pass(`uniform sampler2D uA, uDof, uBloom; uniform vec2 uPx; uniform float uFocus, uK, uMax, uExp, uBloomK, uTime, uGrain, uFade;
+    float coc(float z){ return clamp(uK*(z-uFocus)/max(z,1e-3), -uMax, uMax); }
+    vec3 neutral(vec3 c){ float x=min(c.r,min(c.g,c.b)); float off= x<0.08 ? x-6.25*x*x : 0.04; c-=off;
+      float pk=max(c.r,max(c.g,c.b)); const float sc=0.76; if(pk<sc) return c; const float d=1.0-sc;
+      float np=1.0-d*d/(pk+d-sc); c*=np/pk; float g=1.0-1.0/(0.15*(pk-np)+1.0); return mix(c,vec3(np),g); }
+    vec3 toSRGB(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+    float h(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233))+uTime*17.0)*43758.5453); }
+    void main(){ vec4 a=texture(uA,vUv); float cf=abs(coc(a.a)); vec4 dof=texture(uDof,vUv);
+      float m=smoothstep(0.6,2.2,max(cf,abs(dof.a)*2.0*step(dof.a,0.0)));
+      vec3 c=mix(a.rgb,dof.rgb,m);
+      c+=texture(uBloom,vUv).rgb*uBloomK;
+      vec2 q=vUv-0.5; c*=1.0-0.42*dot(q,q)*1.6;
+      c=neutral(c*uExp)*uFade; c=toSRGB(clamp(c,0.0,1.0));
+      float n=h(vUv*vec2(1920.0,1080.0)); c+=(n-0.5)*uGrain; c+=(h(vUv*vec2(1931.0,1087.0)+3.1)-0.5)/255.0;
+      o=vec4(c,1.0); }`,
+    { uA: { value: RT.acc.texture }, uDof: { value: RT.dof.texture }, uBloom: { value: RT.bloomUp[0].texture }, uPx: { value: new THREE.Vector2(1 / W, 1 / HGT) },
+      uFocus: { value: 1 }, uK: { value: 8 }, uMax: { value: 18 }, uExp: { value: 1 }, uBloomK: { value: 0.06 }, uTime: { value: 0 }, uGrain: { value: 0.022 }, uFade: { value: 1 } });
+}
+
+// ───────────────────────────── renderAt(t) ─────────────────────────────
+let EXPOSURE = 0.96;
+const PLUSH_TMP = {};
+let CAM_OVERRIDE = null;
+function setScene(t) {
+  const cam = cameraAt(t);
+  if (CAM_OVERRIDE) { const o = CAM_OVERRIDE; cam.pos.set(o[0], o[1], o[2]); cam.tgt.set(o[3], o[4], o[5]); cam.fov = o[6]; cam.coc = o[7] ?? 2; cam.focus = cam.pos.distanceTo(cam.tgt); }
+  camera.position.copy(cam.pos); camera.fov = cam.fov; camera.updateProjectionMatrix(); camera.lookAt(cam.tgt);
+  const c = clawState(t);
+  const hf = hubFrame(c.cx, c.cz, c.L, c.thx, c.thz, { pos: V3(), quat: new THREE.Quaternion() });
+  CLAW.hub.position.copy(hf.pos); CLAW.hub.quaternion.copy(hf.quat);
+  CLAW.prongs.forEach((pr, i) => { pr.piv.rotation.set(0, 0, [c.a0, c.a1, c.a2][i]); });
+  applyMachine(t, c, hf);
+  applyCoins(t);
+  applyHero(t, cam.pos);
+  applyPlush(t);
+  applyFlap(t);
+  applyPuffs(t);
+  if (GLASS.mats) for (const m of [GLASS.mats.tint, GLASS.mats.out, GLASS.mats.inn]) m.uniforms.uT.value = t;
+  scene.updateMatrixWorld(true);
+  return cam;
+}
+function renderAt(t) {
+  const n = Math.max(1, SUB);
+  // the centre sample goes last so its depth drives the depth of field
+  const offs = []; for (let i = 0; i < n; i++) offs.push(n === 1 ? 0 : (i / (n - 1) - 0.5));
+  offs.sort((a, b) => Math.abs(b) - Math.abs(a));
+  let cam;
+  const jit = [[0, 0], [0.25, -0.25], [-0.25, 0.25], [0.375, 0.125], [-0.125, -0.375], [0.125, 0.375], [-0.375, -0.125], [0.0, 0.5]];
+  renderer.setRenderTarget(RT.acc); renderer.setClearColor(0x000000, 0); renderer.clear();
+  offs.forEach((o, i) => {
+    cam = setScene(t + o * SHUTTER / FPS);
+    const [jx, jy] = n > 1 ? jit[i % jit.length] : [0, 0];
+    camera.setViewOffset(W, HGT, jx, jy, W, HGT);
+    renderer.setRenderTarget(RT.scene); renderer.setClearColor(0x000000, 1); renderer.render(scene, camera);
+    camera.clearViewOffset();
+    const u = RT.accum.m.uniforms; u.uW.value = 1 / n; u.uNear.value = camera.near; u.uFar.value = camera.far; u.uCenter.value = i === n - 1 ? 1 : 0;
+    RT.accum.run(RT.acc);
+  });
+  cam = setScene(t);
+  const K = cam.coc, focus = cam.focus;
+  for (const pp of [RT.coc.m, RT.final.m]) { pp.uniforms.uFocus.value = focus; pp.uniforms.uK.value = K; }
+  RT.coc.run(RT.half);
+  RT.gather.m.uniforms.uMax.value = Math.min(K * 0.5 + 1, 10);
+  RT.gather.run(RT.dof);
+  // bloom chain
+  let src = RT.dof.texture;
+  RT.bloom.forEach((rt, i) => { const u = RT.down.m.uniforms; u.uS.value = i === 0 ? RT.acc.texture : RT.bloom[i - 1].texture; u.uPx.value.set(1 / rt.width, 1 / rt.height); u.uThr.value = i === 0 ? 1.1 : 0; RT.down.run(rt); });
+  for (let i = RT.bloomUp.length - 1; i >= 0; i--) { const u = RT.up.m.uniforms; u.uS.value = i === RT.bloomUp.length - 1 ? RT.bloom[i + 1].texture : RT.bloomUp[i + 1].texture; u.uB.value = RT.bloom[i].texture; u.uPx.value.set(1 / RT.bloomUp[i].width, 1 / RT.bloomUp[i].height); RT.up.run(RT.bloomUp[i]); }
+  const f = RT.final.m.uniforms; f.uExp.value = EXPOSURE; f.uTime.value = t; f.uFade.value = ss(0, 0.12, t);
+  RT.final.run(null);
+}
+
+// ───────────────────────────── environment captures ─────────────────────────────
+function captureEnv(pos, hide) {
+  const crt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  const cc = new THREE.CubeCamera(0.02, 30, crt); cc.position.copy(pos); scene.add(cc);
+  const vis = hide.map(o => o.visible); hide.forEach(o => o.visible = false);
+  cc.update(renderer, scene);
+  hide.forEach((o, i) => o.visible = vis[i]); scene.remove(cc);
+  return crt.texture;
+}
+
+// ───────────────────────────── QA hooks ─────────────────────────────
+function qaIntersections(t0 = 0, t1 = DUR, step = 1 / FPS, tol = 0.004) {
+  const log = [];
+  const pairsOk = (a, b) => {
+    if (a.kind === b.kind && a.kind !== 'static') return false;      // a body never tests itself
+    if (a.kind === 'static' && b.kind === 'static') return false;
+    if ((a.kind === 'coin' && b.name === 'coinbox') || (b.kind === 'coin' && a.name === 'coinbox')) return false;
+    if (a.kind.startsWith('plush') && b.kind.startsWith('plush')) return true;
+    if ((a.kind === 'hero' && b.kind === 'flap') || (a.kind === 'flap' && b.kind === 'hero')) return true;
+    return true;
+  };
+  for (let t = t0; t <= t1 + 1e-6; t += step) {
+    setScene(t);
+    const camO = { s: { name: 'camera', kind: 'camera' }, o: { c: camera.position.clone(), ax: [V3(1, 0, 0), V3(0, 1, 0), V3(0, 0, 1)], half: [0.012, 0.012, 0.012] } };
+    const obbs = [camO, ...SOLIDS.filter(s => s.obj.visible !== false && (s.obj.parent ? s.obj.parent.visible !== false : true)).map(s => ({ s, o: obbFrom(s.obj.matrixWorld, s.box) }))];
+    for (let i = 0; i < obbs.length; i++) for (let j = i + 1; j < obbs.length; j++) {
+      const A = obbs[i], B = obbs[j];
+      if (!pairsOk(A.s, B.s)) continue;
+      if (A.o.c.distanceTo(B.o.c) > 1.2) continue;
+      const thr = (A.s.kind.startsWith('plush') && B.s.kind.startsWith('plush')) ? tol * 1.5 : tol;
+      if ((A.s.name === 'floor' || B.s.name === 'floor') && (A.s.kind !== 'hero' && B.s.kind !== 'hero')) continue;
+      const pen = obbPen(A.o, B.o);
+      if (pen > thr) log.push({ t: +t.toFixed(3), a: A.s.name, b: B.s.name, pen: +pen.toFixed(4) });
+    }
+  }
+  return log;
+}
+
+// ───────────────────────────── boot ─────────────────────────────
+buildRoom(); buildMachine(); buildHero(); buildPlushies(); buildClaw(); buildCoins(); buildPuffs(); buildLights();
+// glass needs env maps: capture outside (arcade) and inside (the machine) once the pile exists
+bake();
+PLUSH.forEach((p, i) => p.impacts = EVENTS.filter(e => e.type === 'thump' && e.i === i));
+{ const th = EVENTS.find(e => e.type === 'thump' && e.i === 2 && e.t > 15.2 && e.y < 0.5); T.thunkReal = th ? th.t : T.thunk; console.log('thunk at', T.thunkReal.toFixed(3)); }
+{
+  // hero forehead at the moment of the bonk → where the glass flexes and fogs
+  const camB = cameraAt(GLASS.hitT);
+  const brow = () => { applyHero(GLASS.hitT, camB.pos); return V3(0, 12.7 * H, 3 * H).applyMatrix4(HERO.squash.matrixWorld); };
+  let lo = 0.05, hi = 0.9;
+  for (let it = 0; it < 30; it++) { LEAN_HIT = (lo + hi) / 2; if (brow().z > MC.glassZ + 0.0045) lo = LEAN_HIT; else hi = LEAN_HIT; }
+  const fh = brow();
+  GLASS.hit.set(fh.x, fh.y, MC.glassZ + 0.004);
+  GLASS.forehead = fh;
+}
+for (let tt = T.pull0; tt < T.hug; tt += 1 / 120) { setScene(tt); const fa = -MACH.flapPivot.rotation.x; if (fa > 0.02) FLAP.last = fa; else if (FLAP.last > 0 && tt > T.pull0 + 0.05) { FLAP.drop = tt; break; } }
+console.log('flap drops at', FLAP.drop && FLAP.drop.toFixed(3));
+setScene(0.0);
+const envOut = captureEnv(V3(0.1, 1.15, 1.35), [HERO.root]);
+const envIn = captureEnv(V3(0.0, 1.15, 0.05), [HERO.root, CLAW.hub]);
+GLASS.mats = glassMaterials(envOut, envIn);
+GLASS.panes = buildGlass(GLASS.mats);
+const pm = new THREE.PMREMGenerator(renderer);
+const envPm = pm.fromCubemap(envIn).texture;
+MAT.chrome.envMap = envPm; MAT.chrome.envMapIntensity = 1.4;
+MAT.chromeSoft.envMap = envPm; MAT.chromeSoft.envMapIntensity = 1.0;
+buildPost();
+
+// ───────────────────────────── sound (Web Audio, synthesized, no samples) ─────────────────────────────
+// Every hit lands one frame after its picture event, driven by the same timeline and the bake.
+const F1 = 1 / FPS;
+function soundCues() {
+  const ev = EVENTS, cues = [];
+  const add = (type, t, o = {}) => cues.push({ type, t: t + F1, ...o });
+  COINS.forEach((c, k) => { add('clink', c.sink); if (k) add('chime', c.sink + 0.06); });
+  add('wake', 0.31);
+  ev.filter(e => e.type === 'move' && !e.auto).forEach(e => { add('switch', e.t); });
+  ev.filter(e => e.type === 'moveEnd' && !e.auto).forEach(e => add('switch', e.t, { soft: 1 }));
+  PRESS.forEach(t => add('button', t));
+  ev.filter(e => e.type === 'prongStop').forEach(e => add('clack', e.t, { k: e.i }));
+  ev.filter(e => e.type === 'open' || e.type === 'slip').forEach(e => add('openClack', e.t));
+  ev.filter(e => e.type === 'thump' && e.v > 0.3).forEach(e => add('thump', e.t, { v: e.v, i: e.i }));
+  const th = ev.find(e => e.type === 'thump' && e.i === 2 && e.t > 15.26 && e.y < 0.5);
+  T.thunkReal = th ? th.t : T.thunk;
+  add('thunk', T.thunkReal);
+  add('womp', 3.98); add('huff', 4.24);
+  add('bonk', GLASS.hitT); add('wobble', GLASS.hitT + 0.12);
+  add('breathOut', 15.76); add('winJingle', Math.max(T.thunkReal + 0.08, 15.78));
+  add('whoosh', T.hop0); add('land', T.hop1); add('step', 17.38); add('step', 17.5, { soft: 1 });
+  add('flapOpen', POKE.t1 - 0.1); add('flapClack', (FLAP.drop ?? T.pull1) + 0.13);
+  add('squeak', T.hug + 0.02); add('squeak', T.hug + 0.42, { soft: 1 }); add('shimmer', T.hug - 0.05); add('tink', T.blink + 0.3);
+  return cues;
+}
+async function synthStems(sr = 48000) {
+  const N = Math.ceil(DUR * sr), cues = soundCues(), stems = {};
+  const R = rng(99);
+  for (const name of ['music', 'room', 'fx', 'foley']) {
+    const ctx = new OfflineAudioContext(2, N, sr);
+    const bus = ctx.createGain(); bus.connect(ctx.destination);
+    const S = synthKit(ctx, bus, R);
+    SYN[name](S, cues, ctx);
+    const buf = await ctx.startRendering();
+    stems[name] = [buf.getChannelData(0), buf.getChannelData(1)];
+  }
+  return stems;
+}
+function synthKit(ctx, bus, R) {
+  const noise = (() => { const b = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = R() * 2 - 1; return b; })();
+  const out = (pan = 0) => { if (!pan) return bus; const p = ctx.createStereoPanner(); p.pan.value = clamp(pan, -1, 1); p.connect(bus); return p; };
+  const envG = (t, a, d, peak, dest, hold = 0) => {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0, Math.max(0, t)); g.gain.linearRampToValueAtTime(peak, t + a);
+    g.gain.setValueAtTime(peak, t + a + hold); g.gain.exponentialRampToValueAtTime(Math.max(peak * 1e-4, 1e-6), t + a + hold + d); g.connect(dest); return g;
+  };
+  const tone = ({ t, f, f1 = null, type = 'sine', a = 0.003, d = 0.2, g = 0.3, pan = 0, hold = 0, bend = null, vib = 0, vibF = 6, wave = null, detune = 0 }) => {
+    if (t < -0.5 || t > DUR) return;
+    const o = ctx.createOscillator(); if (wave) o.setPeriodicWave(wave); else o.type = type;
+    o.frequency.setValueAtTime(f, Math.max(0, t)); o.detune.value = detune;
+    if (f1) o.frequency.exponentialRampToValueAtTime(f1, t + (bend ?? a + hold + d));
+    if (vib) { const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = vibF; lg.gain.value = vib; l.connect(lg); lg.connect(o.frequency); l.start(Math.max(0, t)); l.stop(t + a + hold + d + 0.05); }
+    o.connect(envG(t, a, d, g, out(pan), hold)); o.start(Math.max(0, t)); o.stop(t + a + hold + d + 0.05);
+  };
+  const nz = ({ t, d = 0.1, a = 0.002, g = 0.3, type = 'bandpass', f = 1000, f1 = null, q = 1, pan = 0, hold = 0 }) => {
+    if (t < -0.5 || t > DUR) return;
+    const s = ctx.createBufferSource(); s.buffer = noise; s.loop = true; s.playbackRate.value = 1;
+    const fl = ctx.createBiquadFilter(); fl.type = type; fl.frequency.setValueAtTime(f, Math.max(0, t)); fl.Q.value = q;
+    if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + a + hold + d);
+    s.connect(fl); fl.connect(envG(t, a, d, g, out(pan), hold)); s.start(Math.max(0, t), R() * 1.5); s.stop(t + a + hold + d + 0.05);
+  };
+  const pulse = (duty) => { const n = 32, re = new Float32Array(n), im = new Float32Array(n); for (let k = 1; k < n; k++) im[k] = 2 / (k * Math.PI) * Math.sin(k * Math.PI * duty); return ctx.createPeriodicWave(re, im); };
+  const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+  return { ctx, bus, out, envG, tone, nz, pulse, mtof, noise, R };
+}
+const SYN = {
+  room(S, cues, ctx) {
+    // soft arcade room tone: a low hum, filtered air and far-off blips from other cabinets
+    const s = ctx.createBufferSource(); s.buffer = S.noise; s.loop = true;
+    const lp = ctx.createBiquadFilter(); lp.type = 'bandpass'; lp.frequency.value = 700; lp.Q.value = 0.4;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 160;
+    const g = ctx.createGain(); g.gain.value = 0.03; s.connect(lp); lp.connect(hp); hp.connect(g); g.connect(S.bus); s.start(0);
+    for (const [f, a] of [[60, 0.004], [120, 0.0035], [180, 0.002], [240, 0.0012]]) { const o = ctx.createOscillator(); o.frequency.value = f; const og = ctx.createGain(); og.gain.value = a; o.connect(og); og.connect(S.bus); o.start(0); }
+    const R = rng(5); let t = 0.2;
+    const pw = S.pulse(0.25);
+    while (t < DUR) {
+      const pan = R() * 1.6 - 0.8, base = 60 + Math.floor(R() * 24);
+      const n = 2 + Math.floor(R() * 4);
+      for (let i = 0; i < n; i++) S.tone({ t: t + i * 0.07, f: S.mtof(base + [0, 4, 7, 12, 7][i % 5]), wave: pw, d: 0.06, g: 0.010, pan });
+      t += 0.5 + R() * 1.6;
+    }
+  },
+  music(S, cues, ctx) {
+    const pw = S.pulse(0.125), pw2 = S.pulse(0.25);
+    // wake jingle as the bulbs chase awake
+    [72, 76, 79, 84, 88, 91].forEach((m, i) => S.tone({ t: 0.31 + F1 + i * 0.055, f: S.mtof(m), wave: pw2, d: 0.16, g: 0.05, pan: (i - 2.5) * 0.12 }));
+    S.tone({ t: 0.31 + F1 + 0.33, f: S.mtof(96), type: 'triangle', d: 0.5, g: 0.05 });
+    // cheeky chiptune loop under tries 1 and 2
+    const bpm = 138, e8 = 60 / bpm / 2;
+    const lead = [7, 4, 7, 9, 7, 4, 2, 4, 5, 2, 5, 7, 5, 2, -1, 2, 7, 4, 7, 12, 11, 7, 9, 7, 5, 4, 2, 4, 0, -1, 0, null];
+    const bass = [0, 0, 7, 7, 9, 9, 5, 5];
+    const loop = (t0, t1) => {
+      for (let i = 0, t = t0; t < t1 - 0.01; i++, t += e8) {
+        const n = lead[i % lead.length];
+        const fade = 1 - ss(t1 - 0.3, t1, t);
+        if (n !== null) S.tone({ t, f: S.mtof(72 + n), wave: pw, d: e8 * 0.85, a: 0.004, g: 0.06 * fade, pan: 0.15 });
+        if (i % 2 === 0) S.tone({ t, f: S.mtof(48 + bass[(i >> 2) % bass.length]), type: 'triangle', d: e8 * 1.6, a: 0.01, g: 0.036 * fade, pan: -0.1 });
+        if (i % 2 === 1) S.nz({ t, d: 0.03, f: 8000, type: 'highpass', g: 0.02 * fade, pan: 0.3 });
+        if (i % 4 === 0) S.nz({ t, d: 0.05, f: 240, type: 'lowpass', g: 0.03 * fade });
+      }
+    };
+    loop(1.02, 3.96); loop(4.92, GLASS.hitT);
+    // sad "womp" sting
+    [[55, 0.0, 0.2], [54, 0.24, 0.2], [53, 0.48, 0.2], [52, 0.72, 0.55]].forEach(([m, dt, d], i) => {
+      S.tone({ t: 3.98 + F1 + dt, f: S.mtof(m), type: 'sawtooth', d, hold: 0.05, a: 0.02, g: 0.034, vib: i === 3 ? 7 : 0, vibF: 5.5, f1: i === 3 ? S.mtof(m - 0.6) : null });
+    });
+    // try 3: the music drops to a heartbeat pulse and a ticking clock
+    let t = 10.2;
+    while (t < T.thunkReal - 0.08) {
+      const bpmH = lerp(78, 104, ss(10.2, 15.6, t));
+      for (const [dt, k] of [[0, 1], [0.18, 0.6]]) S.tone({ t: t + dt, f: 74, f1: 46, bend: 0.12, d: 0.16, a: 0.014, g: 0.036 * k * ss(10.0, 10.6, t) });
+      t += 60 / bpmH;
+    }
+    for (let i = 0, tt = 10.25; tt < T.thunkReal - 0.1; i++, tt += 0.5) S.nz({ t: tt, d: 0.018, f: i % 2 ? 2600 : 3300, q: 6, g: 0.06 * ss(10.1, 10.6, tt), pan: 0.25 });
+    // bright win jingle and a light-chase arpeggio
+    const w0 = Math.max(T.thunkReal + 0.08, 15.78) + F1;
+    [72, 76, 79, 84].forEach((m, i) => S.tone({ t: w0 + i * 0.075, f: S.mtof(m), wave: pw2, d: 0.12, g: 0.055 }));
+    [84, 88, 91].forEach(m => S.tone({ t: w0 + 0.32, f: S.mtof(m), wave: pw, d: 0.7, hold: 0.1, a: 0.01, g: 0.024, vib: 4, vibF: 6 }));
+    const arp = [72, 76, 79, 84, 88, 84, 79, 76];
+    for (let i = 0, tt = w0 + 0.42; tt < 17.4; i++, tt += 0.067) S.tone({ t: tt, f: S.mtof(arp[i % 8] + (Math.floor(i / 8) % 2) * 5), wave: pw2, d: 0.06, g: 0.03 * (1 - ss(17.0, 17.4, tt)), pan: Math.sin(i * 0.8) * 0.5 });
+    // a soft music-box under the hug
+    [[18.5, 84], [18.8, 88], [19.1, 91], [19.4, 89], [19.7, 88], [19.95, 84]].forEach(([tt, m]) => {
+      S.tone({ t: tt, f: S.mtof(m), d: 1.2, g: 0.025, a: 0.006 }); S.tone({ t: tt, f: S.mtof(m) * 3, d: 0.3, g: 0.006 });
+    });
+    [[18.4, [60, 64, 67]], [19.4, [57, 60, 65]]].forEach(([tt, ch]) => ch.forEach(m => S.tone({ t: tt, f: S.mtof(m), type: 'triangle', a: 0.3, hold: 0.6, d: 0.8, g: 0.013 })));
+  },
+  fx(S, cues, ctx) {
+    for (const c of cues) {
+      const t = c.t;
+      if (c.type === 'clink') {
+        for (const [f, d, g] of [[2210, 0.35, 0.04], [3720, 0.25, 0.027], [5310, 0.18, 0.02], [6930, 0.12, 0.013]]) S.tone({ t, f, d, g, pan: 0.1 });
+        for (const [f, d] of [[1980, 0.12], [3100, 0.08]]) S.tone({ t: t + 0.075, f, d, g: 0.025, pan: 0.1 });
+        S.nz({ t, d: 0.012, f: 6000, g: 0.05 });
+      }
+      if (c.type === 'chime') { S.tone({ t, f: 1318.5, d: 0.6, g: 0.05 }); S.tone({ t: t + 0.09, f: 1760, d: 0.8, g: 0.05 }); }
+      if (c.type === 'switch') { S.nz({ t, d: 0.006, f: 4200, q: 3, g: c.soft ? 0.05 : 0.09, pan: 0.35 }); S.tone({ t, f: 2400, d: 0.01, g: 0.02, pan: 0.35 }); }
+      if (c.type === 'button') { S.tone({ t, f: 190, f1: 90, bend: 0.04, d: 0.06, a: 0.003, g: 0.15, pan: -0.2 }); S.nz({ t, d: 0.01, f: 2500, q: 2, g: 0.1, pan: -0.2 }); S.nz({ t: t + 0.1, d: 0.008, f: 2900, q: 2, g: 0.05, pan: -0.2 }); }
+      if (c.type === 'clack') { for (const [f, d] of [[1240, 0.07], [2870, 0.05], [4120, 0.04]]) S.tone({ t, f: f * (1 + c.k * 0.03), d, g: 0.05 }); S.nz({ t, d: 0.02, f: 2000, q: 1.5, g: 0.06 }); }
+      if (c.type === 'openClack') { for (const [f, d] of [[980, 0.06], [2310, 0.04]]) S.tone({ t, f, d, g: 0.035 }); S.nz({ t, d: 0.018, f: 1600, q: 1.2, g: 0.06 }); }
+      if (c.type === 'thunk') {
+        S.tone({ t, f: 76, f1: 42, bend: 0.3, d: 0.42, a: 0.012, g: 0.062 }); S.tone({ t, f: 142, d: 0.25, a: 0.004, g: 0.045 });
+        S.nz({ t, d: 0.2, f: 260, type: 'lowpass', g: 0.09 }); S.nz({ t: t + 0.004, d: 0.08, f: 900, q: 1, g: 0.05 });
+      }
+      if (c.type === 'bonk') {
+        S.tone({ t, f: 96, f1: 52, bend: 0.14, d: 0.22, a: 0.006, g: 0.14 }); S.nz({ t, d: 0.07, f: 420, type: 'lowpass', g: 0.09 });
+        for (const [f, d, g] of [[1850, 0.9, 0.028], [1863, 0.9, 0.024], [2655, 0.6, 0.02], [4110, 0.4, 0.012]]) S.tone({ t: t + 0.002, f, d, g, pan: 0.05 });
+      }
+      if (c.type === 'flapOpen') { S.nz({ t, d: 0.03, f: 1200, q: 1.5, g: 0.06, pan: -0.3 }); S.tone({ t, f: 340, d: 0.05, g: 0.05, pan: -0.3 }); }
+      if (c.type === 'flapClack') { S.nz({ t, d: 0.035, f: 1500, q: 1.3, g: 0.14, pan: -0.3 }); S.tone({ t, f: 410, d: 0.06, g: 0.1, pan: -0.3 }); S.nz({ t: t + 0.07, d: 0.02, f: 1700, q: 1.3, g: 0.05, pan: -0.3 }); }
+    }
+    // gantry motor whine follows the gantry's speed, with a Doppler-ish bend; cable ratchet on the cable
+    const n = Math.ceil(DUR * 100), fr = new Float32Array(n), gn = new Float32Array(n);
+    let travel = 0, nextClick = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / 100, c = clawState(t), sp = Math.hypot(c.vx, c.vz), acc = (Math.hypot(clawState(t + 0.02).vx, clawState(t + 0.02).vz) - sp) / 0.02;
+      fr[i] = 150 + 980 * sp + 40 * clamp(acc, -2, 2); gn[i] = 0.05 * ss(0.01, 0.06, sp);
+      travel += Math.abs(c.Lv) * 0.01;
+      if (travel > nextClick) { nextClick += 0.006; S.nz({ t: t + F1, d: 0.004, f: 3200, q: 4, g: 0.03 * clamp(Math.abs(c.Lv) * 2.5, 0.3, 1) }); }
+    }
+    const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueCurveAtTime(fr, F1, DUR - F1);
+    const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.setValueCurveAtTime(fr.map(f => f * 0.5), F1, DUR - F1);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400; lp.Q.value = 2;
+    const g = ctx.createGain(); g.gain.value = 0; g.gain.setValueAtTime(0, 0); g.gain.setValueCurveAtTime(gn, F1, DUR - F1);
+    const g2 = ctx.createGain(); g2.gain.value = 0.35;
+    o.connect(lp); o2.connect(g2); g2.connect(lp); lp.connect(g); g.connect(S.bus); o.start(0); o2.start(0);
+  },
+  foley(S, cues, ctx) {
+    for (const c of cues) {
+      const t = c.t;
+      if (c.type === 'thump') {
+        // soft felt thump; bigger ones lower
+        const v = Math.min(c.v, 2.5), big = c.i === 2 ? 1 : 0;
+        S.nz({ t, d: 0.06 + v * 0.02, f: 420 - v * 70, type: 'lowpass', g: 0.05 + v * 0.08, pan: -0.2 + (c.i % 5) * 0.1 });
+        S.tone({ t, f: 130 - v * 20 - big * 20, f1: 70, bend: 0.06, d: 0.07, g: 0.03 + v * 0.05 });
+      }
+      if (c.type === 'huff') S.nz({ t, d: 0.2, a: 0.02, f: 900, f1: 500, q: 0.8, g: 0.09 });
+      if (c.type === 'breathOut') S.nz({ t, d: 0.45, a: 0.03, f: 1100, f1: 500, q: 0.7, g: 0.16 });
+      if (c.type === 'wobble') {
+        S.tone({ t, f: 220, f1: 560, bend: 0.35, d: 0.42, a: 0.01, g: 0.085, vib: 40, vibF: 13 });   // boing
+        S.tone({ t: t + 0.3, f: 620, d: 0.7, a: 0.05, hold: 0.1, g: 0.035, vib: 60, vibF: 7 });       // wobbly dazed
+        S.tone({ t: t + 0.3, f: 930, d: 0.6, a: 0.05, hold: 0.1, g: 0.02, vib: 80, vibF: 7.5 });
+      }
+      if (c.type === 'whoosh') S.nz({ t, d: 0.35, a: 0.08, f: 350, f1: 2600, q: 1.2, g: 0.16 });
+      if (c.type === 'land') { S.tone({ t, f: 110, f1: 60, bend: 0.06, d: 0.09, a: 0.004, g: 0.14 }); S.nz({ t, d: 0.05, f: 500, type: 'lowpass', g: 0.12 }); }
+      if (c.type === 'step') { S.tone({ t, f: 140, f1: 80, bend: 0.03, d: 0.04, g: c.soft ? 0.06 : 0.09 }); S.nz({ t, d: 0.02, f: 700, type: 'lowpass', g: 0.05 }); }
+      if (c.type === 'squeak') { const k = c.soft ? 0.6 : 1; S.tone({ t, f: 900, f1: 1450, bend: 0.08, d: 0.16, hold: 0.04, a: 0.012, g: 0.026 * k, vib: 70, vibF: 26, type: 'triangle' }); }
+      if (c.type === 'shimmer') { const R = rng(11); for (let i = 0; i < 14; i++) S.tone({ t: t + i * 0.035, f: 2600 + R() * 3600, d: 0.45, a: 0.02, g: 0.012, pan: R() * 1.2 - 0.6 }); }
+      if (c.type === 'tink') S.tone({ t, f: 3520, d: 0.4, g: 0.05 });
+    }
+  },
+};
+// realtime playback in Chrome: render the stems, apply the same stem gains as the master
+window.synthStems = synthStems;
+window.synthMix = async (ac) => {
+  const st = await synthStems(ac.sampleRate);
+  const gains = { music: 10 ** (14 / 20), room: 10 ** (10 / 20), fx: 10 ** (-3 / 20), foley: 1 };   // same stem gains as audio/master.py
+  const n = st.music[0].length, buf = ac.createBuffer(2, n, ac.sampleRate);
+  let peak = 1e-6;
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (const k in st) { const s = st[k][ch]; for (let i = 0; i < n; i++) d[i] += s[i] * gains[k]; } for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i])); }
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < n; i++) d[i] *= 0.8 / peak; }
+  return buf;
+};
+
+window.renderAt = renderAt;
+window.duration = DUR; window.fps = FPS;
+window.qa = { intersections: qaIntersections, events: () => EVENTS, setSub: (n) => SUB = n, setExposure: (e) => EXPOSURE = e,
+  hero: (t) => { const c = cameraAt(t); return heroPose(t, c.pos); }, cam: (t) => cameraAt(t), forehead: () => GLASS.forehead,
+  plush: (i, t) => { const p = V3(), q = new THREE.Quaternion(); plushPose(i, t, p, q); return { p: p.toArray(), q: q.toArray() }; },
+  claw: (t) => clawState(t), setLeanHit: (v) => LEAN_HIT = v, setCam: (c) => CAM_OVERRIDE = c };
+window.ready = true;
+
+// ───────────────────────────── playback (Chrome) ─────────────────────────────
+const tParam = Q.get('t');
+if (tParam !== null) { renderAt(+tParam); }
+else if (!Q.has('render')) {
+  const btn = document.getElementById('play'); btn.hidden = false; btn.textContent = '▶  CLICK TO PLAY WITH SOUND';
+  renderAt(0);
+  btn.onclick = async () => {
+    btn.hidden = true;
+    let t0 = null, ac = null;
+    try { if (window.synthMix) { ac = new AudioContext(); const buf = await window.synthMix(ac); const src = ac.createBufferSource(); src.buffer = buf; src.connect(ac.destination); src.start(); t0 = ac.currentTime; } } catch (e) { console.warn(e); }
+    const start = performance.now();
+    const tick = () => {
+      const t = ac && t0 !== null ? ac.currentTime - t0 : (performance.now() - start) / 1000;
+      renderAt(Math.min(t, DUR));
+      if (t < DUR) requestAnimationFrame(tick); else { btn.hidden = false; btn.textContent = '↻  PLAY AGAIN'; }
+    };
+    tick();
+  };
+}
+</script>
+</body>
+</html>
