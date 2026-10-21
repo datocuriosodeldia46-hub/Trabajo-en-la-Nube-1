@@ -50,6 +50,7 @@ def lineas_de_frame(ocr, frame, alto_min):
         return []
     items = []
     for box, texto, conf in res:
+        conf = float(conf)  # rapidocr >= 1.3 returns the score as a string
         box = [(p[0] / ESCALA, p[1] / ESCALA) for p in box]
         alto = max(p[1] for p in box) - min(p[1] for p in box)
         texto = texto.strip()
