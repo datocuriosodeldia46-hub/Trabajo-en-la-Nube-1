@@ -222,102 +222,422 @@ function buildTraffic(R) {
 // ───────────────────────────── Lucas, his bike and the truck ─────────────────────────────
 const MAT = {};
 const BIKE = {}, LUCAS = {}, TRUCK = {};
+// a cylinder between two points
+function rod(a, b, r, mat, parent, seg = 12, r2 = r) {
+  const d = V3().subVectors(b, a), L = d.length();
+  const m = mesh(new THREE.CylinderGeometry(r2, r, L, seg), mat, parent);
+  m.position.addVectors(a, b).multiplyScalar(0.5); m.quaternion.setFromUnitVectors(V3(0, 1, 0), d.normalize());
+  return m;
+}
+// smooth keyed profile: kf([[v, value], ...])(v)
+const kf = (keys) => (v) => {
+  if (v <= keys[0][0]) return keys[0][1];
+  for (let i = 1; i < keys.length; i++) if (v <= keys[i][0]) { const u = (v - keys[i - 1][0]) / (keys[i][0] - keys[i - 1][0]); return lerp(keys[i - 1][1], keys[i][1], u * u * (3 - 2 * u)); }
+  return keys[keys.length - 1][1];
+};
+// a normal map from a height field drawn on a canvas (white = raised)
+function normalTex(w, h, draw, strength = 2, repeat = [1, 1]) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h; const c = cv.getContext('2d'); draw(c, w, h);
+  const src = c.getImageData(0, 0, w, h).data, out = c.createImageData(w, h), H = (x, y) => src[(((y + h) % h) * w + ((x + w) % w)) * 4] / 255;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const dx = (H(x + 1, y) - H(x - 1, y)) * strength, dy = (H(x, y + 1) - H(x, y - 1)) * strength, l = Math.hypot(dx, dy, 1), o = (y * w + x) * 4;
+    out.data[o] = (-dx / l * 0.5 + 0.5) * 255; out.data[o + 1] = (dy / l * 0.5 + 0.5) * 255; out.data[o + 2] = (1 / l * 0.5 + 0.5) * 255; out.data[o + 3] = 255;
+  }
+  c.putImageData(out, 0, 0);
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.anisotropy = 8; return t;
+}
+
+// ───────────────────────────── procedural skin ─────────────────────────────
+// Limbs, torso and the vest are tubes lofted along a filleted path through the joints and rebuilt every
+// frame: bones stay straight and only bend near the joint, so elbows and knees fold like cloth over a body.
+function filletPath(pts, rc) {
+  const out = [pts[0].clone()];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const A = pts[i - 1], J = pts[i], B = pts[i + 1], r = Math.min(rc, A.distanceTo(J) * 0.45, J.distanceTo(B) * 0.45);
+    const p0 = J.clone().addScaledVector(V3().subVectors(A, J).normalize(), r), p2 = J.clone().addScaledVector(V3().subVectors(B, J).normalize(), r);
+    out.push(p0);
+    for (let k = 1; k < 10; k++) { const u = k / 10; out.push(V3().addScaledVector(p0, (1 - u) * (1 - u)).addScaledVector(J, 2 * u * (1 - u)).addScaledVector(p2, u * u)); }
+    out.push(p2);
+  }
+  out.push(pts[pts.length - 1].clone());
+  const L = [0]; for (let i = 1; i < out.length; i++) L.push(L[i - 1] + out[i].distanceTo(out[i - 1]));
+  const total = L[L.length - 1];
+  return {
+    total, at(v, P, T) {
+      const s = clamp(v) * total; let i = 1; while (i < L.length - 1 && L[i] < s) i++;
+      const u = (s - L[i - 1]) / Math.max(1e-6, L[i] - L[i - 1]); P.lerpVectors(out[i - 1], out[i], u);
+      // tangent averaged over a short window so the rings don't step at polyline vertices
+      const a = Math.max(0, i - 2), b = Math.min(out.length - 1, i + 1); T.subVectors(out[b], out[a]).normalize();
+    },
+  };
+}
+class Loft {
+  constructor(rings, seg, mat, parent) {
+    this.R = rings; this.S = seg;
+    const n = rings * (seg + 1), uv = new Float32Array(n * 2), idx = [];
+    this.pos = new Float32Array(n * 3); this.nor = new Float32Array(n * 3);
+    for (let i = 0; i < rings; i++) for (let j = 0; j <= seg; j++) { const k = i * (seg + 1) + j; uv[2 * k] = j / seg; uv[2 * k + 1] = i / (rings - 1); }
+    for (let i = 0; i < rings - 1; i++) for (let j = 0; j < seg; j++) { const a = i * (seg + 1) + j, b = a + seg + 1; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(this.nor, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.setIndex(idx);
+    this.geo = g; this.mesh = mesh(g, mat, parent); this.mesh.frustumCulled = false;
+  }
+  // path: filletPath; ref(v) → a direction ⟂-ish to the tube (the cross-section "n" axis);
+  // prof(v) → { n, b: half-sizes, on, ob: centre offsets, p: superellipse power }; bump(v, a) → radial scale
+  build(path, ref, prof, bump) {
+    const S = this.S, P = V3(), T = V3(), N = V3(), B = V3(), r = V3(), pos = this.pos;
+    for (let i = 0; i < this.R; i++) {
+      const v = i / (this.R - 1); path.at(v, P, T);
+      r.copy(ref(v)); N.copy(r).addScaledVector(T, -T.dot(r)).normalize(); B.crossVectors(T, N);
+      const q = prof(v), e = 2 / (q.p ?? 2), on = q.on ?? 0, ob = q.ob ?? 0;
+      for (let j = 0; j <= S; j++) {
+        const a = (j % S) / S * Math.PI * 2, c = Math.cos(a), s = Math.sin(a), k = bump ? 1 + bump(v, a) : 1;
+        const cx = Math.sign(c) * Math.pow(Math.abs(c), e) * q.n * k + on, sx = Math.sign(s) * Math.pow(Math.abs(s), e) * q.b * k + ob;
+        const o = 3 * (i * (S + 1) + j);
+        pos[o] = P.x + N.x * cx + B.x * sx; pos[o + 1] = P.y + N.y * cx + B.y * sx; pos[o + 2] = P.z + N.z * cx + B.z * sx;
+      }
+    }
+    // normals: central differences around (wrapping the seam) and along the tube
+    const nor = this.nor, R = this.R, W = S + 1, at = (i, j) => 3 * (i * W + j);
+    for (let i = 0; i < R; i++) for (let j = 0; j <= S; j++) {
+      const jj = j === S ? 0 : j, jp = at(i, (jj + 1) % S), jm = at(i, (jj + S - 1) % S), ip = at(Math.min(i + 1, R - 1), jj), im = at(Math.max(i - 1, 0), jj);
+      const ux = pos[jp] - pos[jm], uy = pos[jp + 1] - pos[jm + 1], uz = pos[jp + 2] - pos[jm + 2];
+      const vx = pos[ip] - pos[im], vy = pos[ip + 1] - pos[im + 1], vz = pos[ip + 2] - pos[im + 2];
+      let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx; const l = Math.hypot(nx, ny, nz) || 1;
+      const o = at(i, j); nor[o] = nx / l; nor[o + 1] = ny / l; nor[o + 2] = nz / l;
+    }
+    this.geo.attributes.position.needsUpdate = true; this.geo.attributes.normal.needsUpdate = true;
+  }
+}
+// analytic two-bone IK: root A, target T, bone lengths, pole direction → [elbow, wrist]
+function ik2(A, T, l1, l2, pole) {
+  const d = V3().subVectors(T, A), dist = clamp(d.length(), Math.abs(l1 - l2) + 1e-3, (l1 + l2) * 0.999); d.normalize();
+  const a = (l1 * l1 - l2 * l2 + dist * dist) / (2 * dist), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const p = pole.clone().addScaledVector(d, -pole.dot(d)).normalize();
+  return [A.clone().addScaledVector(d, a).addScaledVector(p, h), A.clone().addScaledVector(d, dist)];
+}
+
+// ───────────────────────────── the bike: a 150 cc work commuter ─────────────────────────────
 function buildBike() {
   const g = new THREE.Group(); scene.add(g); BIKE.g = g;   // origin: ground under the wheelbase centre, facing -z
-  const black = std(0x101114, 0.55), chrome = std(0xdadde2, 0.15, 1), paint = std(0xc8202a, 0.25, 0.3), rubber = std(0x0c0c0c, 0.85);
-  const wheel = (z) => {
-    const w = new THREE.Group(); w.position.set(0, 0.31, z); g.add(w);
-    mesh(new THREE.TorusGeometry(0.27, 0.065, 12, 36), rubber, w, [0, 0, 0], [0, Math.PI / 2, 0]);
-    mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.05, 28), std(0x2a2c30, 0.35, 0.8), w, [0, 0, 0], [0, 0, Math.PI / 2]);
-    mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.055, 24), chrome, w, [0.02, 0, 0], [0, 0, Math.PI / 2]);
+  const black = std(0x121316, 0.45, 0.3), chrome = std(0xe4e7ec, 0.1, 1), alu = std(0x8d939b, 0.32, 0.9), rubber = std(0x0e0e0f, 0.88);
+  const paint = new THREE.MeshPhysicalMaterial({ color: 0xa8101a, roughness: 0.3, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.06 });
+  const plastic = std(0x17181b, 0.55);
+  const AXF = V3(0, 0.3, -0.68), AXR = V3(0, 0.3, 0.64), HEAD = V3(0, 0.98, -0.44);
+  const wheel = (p, front) => {
+    const w = new THREE.Group(); w.position.copy(p); g.add(w);
+    const tire = mesh(new THREE.TorusGeometry(0.245, 0.056, 18, 56), rubber, w, [0, 0, 0], [0, Math.PI / 2, 0]); tire.scale.z = 0.82;
+    mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.07, 48, 1, true), alu, w, [0, 0, 0], [0, 0, Math.PI / 2]);
+    for (const s of [-1, 1]) mesh(new THREE.TorusGeometry(0.2, 0.008, 6, 48), chrome, w, [s * 0.035, 0, 0], [0, Math.PI / 2, 0]);
+    for (let k = 0; k < 6; k++) { const a = k / 6 * Math.PI * 2; mesh(new THREE.BoxGeometry(0.022, 0.16, 0.03), black, w, [0, Math.cos(a) * 0.115, Math.sin(a) * 0.115], [a, 0, 0]); }
+    mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12, 20), alu, w, [0, 0, 0], [0, 0, Math.PI / 2]);
+    if (front) mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.006, 32), std(0xb8bcc2, 0.25, 1), w, [-0.055, 0, 0], [0, 0, Math.PI / 2]);
+    else mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.01, 24), black, w, [-0.065, 0, 0], [0, 0, Math.PI / 2]);
     return w;
   };
-  BIKE.wf = wheel(-0.68); BIKE.wr = wheel(0.66);
-  // fork, frame, tank, seat, tail
-  for (const s of [-0.09, 0.09]) mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75, 10), chrome, g, [s, 0.62, -0.58], [-0.42, 0, 0]);
-  mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.85, 10), black, g, [0, 0.68, -0.1], [1.15, 0, 0]);
-  mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 10), black, g, [0, 0.45, 0.35], [-1.25, 0, 0]);
-  const tank = mesh(new THREE.SphereGeometry(0.22, 24, 16), paint, g, [0, 0.9, -0.2], [0, 0, 0]); tank.scale.set(0.9, 0.62, 1.35);
-  mesh(rbox(0.26, 0.08, 0.62, 0.035), black, g, [0, 0.86, 0.25], [0.08, 0, 0]);
-  mesh(rbox(0.22, 0.12, 0.42, 0.04), paint, g, [0, 0.82, 0.62], [-0.18, 0, 0]);
-  mesh(rbox(0.3, 0.24, 0.42, 0.06), std(0x1c1d21, 0.5, 0.3), g, [0, 0.48, -0.02]);         // engine
-  mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.6, 12), chrome, g, [0.16, 0.42, 0.45], [1.35, 0, 0]);  // exhaust
-  mesh(rbox(0.28, 0.06, 0.4, 0.03), paint, g, [0, 0.62, -0.72], [0.35, 0, 0]);           // front fender
-  // headlight, handlebars, mirrors, tail light
-  mesh(new THREE.CylinderGeometry(0.09, 0.08, 0.1, 20), black, g, [0, 0.98, -0.78], [Math.PI / 2 - 0.2, 0, 0]);
-  mesh(new THREE.CircleGeometry(0.075, 20), hdr(0xfff6e8, 12), g, [0, 0.99, -0.835], [0.2, Math.PI, 0], false);
-  mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.7, 8), chrome, g, [0, 1.08, -0.6], [0, 0, Math.PI / 2]);
-  for (const s of [-1, 1]) { mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.12, 10), black, g, [s * 0.36, 1.08, -0.6], [0, 0, Math.PI / 2]); mesh(rbox(0.1, 0.06, 0.02, 0.01), chrome, g, [s * 0.3, 1.32, -0.58]); mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.24, 6), chrome, g, [s * 0.3, 1.2, -0.58]); }
-  mesh(new THREE.BoxGeometry(0.14, 0.05, 0.03), hdr(0xff1a14, 8), g, [0, 0.83, 0.85], [0, 0, 0], false);
+  BIKE.wf = wheel(AXF, true); BIKE.wr = wheel(AXR, false);
+  // fork: alloy sliders, chrome stanchions, triple clamps
+  for (const s of [-1, 1]) {
+    const lo = V3(s * 0.08, 0.3, -0.68), mid = lo.clone().lerp(V3(s * 0.08, 0.98, -0.42), 0.42), top = V3(s * 0.08, 1.02, -0.405);
+    rod(lo, mid, 0.03, alu, g, 14); rod(mid, top, 0.02, chrome, g, 14);
+  }
+  mesh(rbox(0.22, 0.04, 0.08, 0.015), black, g, [0, 1.02, -0.41], [0.36, 0, 0]);
+  mesh(rbox(0.22, 0.035, 0.07, 0.015), black, g, [0, 0.9, -0.46], [0.36, 0, 0]);
+  mesh(rbox(0.04, 0.06, 0.08, 0.01), black, g, [-0.08, 0.36, -0.66]);                         // brake caliper
+  // front fender
+  { const f = mesh(new THREE.TorusGeometry(0.31, 0.05, 8, 24, 1.9), paint, g, [0, 0.3, -0.68], [0, Math.PI / 2, 0.35]); f.scale.z = 1.3; }
+  // handlebar with a slight sweep back, grips, levers, mirrors
+  const BAR_C = V3(0, 1.07, -0.43);
+  BIKE.grip = [];
+  for (const s of [-1, 1]) {
+    const end = V3(s * 0.34, 1.1, -0.36);
+    rod(BAR_C, end, 0.013, chrome, g, 10);
+    rod(end, V3(s * 0.45, 1.105, -0.345), 0.018, rubber, g, 12);
+    rod(V3(s * 0.3, 1.11, -0.4), V3(s * 0.43, 1.1, -0.46), 0.006, alu, g, 6);                    // lever
+    rod(V3(s * 0.27, 1.1, -0.4), V3(s * 0.38, 1.33, -0.5), 0.006, chrome, g, 6);                 // mirror stalk
+    const m = mesh(new THREE.SphereGeometry(0.05, 16, 10), black, g, [s * 0.4, 1.35, -0.5]); m.scale.set(1.3, 0.75, 0.3);
+    mesh(new THREE.CircleGeometry(0.042, 20), std(0x9fb6d0, 0.02, 1), g, [s * 0.4, 1.35, -0.484], [0, 0, 0], false).scale.set(1.25, 0.72, 1);
+    BIKE.grip.push(V3(s * 0.4, 1.103, -0.352));
+  }
+  // headlight nacelle and dash
+  const nac = mesh(new THREE.SphereGeometry(0.13, 28, 18), paint, g, [0, 0.95, -0.56]); nac.scale.set(0.95, 0.9, 0.8);
+  mesh(new THREE.CylinderGeometry(0.085, 0.09, 0.05, 28), chrome, g, [0, 0.95, -0.655], [Math.PI / 2, 0, 0]);
+  mesh(new THREE.CircleGeometry(0.078, 28), hdr(0xfff6e8, 12), g, [0, 0.95, -0.682], [0, Math.PI, 0], false);
+  mesh(rbox(0.16, 0.07, 0.1, 0.025), black, g, [0, 1.09, -0.48], [-0.5, 0, 0]);
+  // fuel tank (teardrop, higher at the front) with knee pads
+  {
+    const geo = new THREE.SphereGeometry(1, 40, 24), p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      let x = p.getX(i), y = p.getY(i), z = p.getZ(i); const front = clamp(-z * 0.5 + 0.5);
+      y = Math.max(y, -0.55); x *= 0.155 * (0.9 + 0.2 * front); y *= 0.12 * (0.8 + 0.45 * front); z *= 0.25;
+      p.setXYZ(i, x, y, z);
+    }
+    geo.computeVertexNormals();
+    mesh(geo, paint, g, [0, 0.9, -0.17], [-0.12, 0, 0]);
+    mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.02, 20), chrome, g, [0, 1.02, -0.24], [-0.12, 0, 0]);
+    for (const s of [-1, 1]) mesh(rbox(0.02, 0.09, 0.16, 0.01), black, g, [s * 0.15, 0.87, -0.06]);
+  }
+  // frame
+  rod(V3(0, 0.95, -0.42), V3(0, 0.72, 0.14), 0.03, black, g); rod(V3(0, 0.88, -0.44), V3(0, 0.42, -0.24), 0.028, black, g);
+  for (const s of [-1, 1]) rod(V3(s * 0.08, 0.72, 0.1), V3(s * 0.07, 0.76, 0.72), 0.016, black, g);
+  // engine: crankcase, finned cylinder leaning forward, round side covers
+  mesh(rbox(0.22, 0.24, 0.32, 0.05), std(0x2a2c30, 0.4, 0.6), g, [0, 0.38, -0.02]);
+  for (const s of [-1, 1]) mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.03, 28), alu, g, [s * 0.12, 0.38, -0.02], [0, 0, Math.PI / 2]);
+  { const cyl = new THREE.Group(); cyl.position.set(0, 0.5, -0.17); cyl.rotation.x = -1.15; g.add(cyl);
+    for (let k = 0; k < 7; k++) mesh(rbox(0.17, 0.012, 0.15, 0.005), alu, cyl, [0, k * 0.024, 0]);
+    mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.17, 16), std(0x2a2c30, 0.4, 0.6), cyl, [0, 0.07, 0]);
+    mesh(rbox(0.15, 0.05, 0.13, 0.02), alu, cyl, [0, 0.185, 0]); }
+  // exhaust: header under the engine to a muffler on the right
+  { const pts = [V3(0, 0.5, -0.37), V3(0.04, 0.3, -0.36), V3(0.1, 0.2, -0.15), V3(0.15, 0.24, 0.2), V3(0.17, 0.33, 0.42)];
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.022, 10), chrome, g);
+    rod(V3(0.17, 0.31, 0.3), V3(0.19, 0.44, 0.74), 0.055, black, g, 18, 0.05);
+    rod(V3(0.18, 0.4, 0.66), V3(0.19, 0.45, 0.78), 0.05, chrome, g, 18, 0.05); }
+  // seat, side covers, tail, plate
+  mesh(rbox(0.27, 0.1, 0.64, 0.045), std(0x141518, 0.75), g, [0, 0.79, 0.27], [0.03, 0, 0]);
+  mesh(rbox(0.22, 0.17, 0.34, 0.04), paint, g, [0, 0.65, 0.3]);
+  mesh(rbox(0.2, 0.1, 0.3, 0.04), paint, g, [0, 0.8, 0.68], [-0.15, 0, 0]);
+  mesh(rbox(0.12, 0.05, 0.03, 0.01), hdr(0xff1a14, 8), g, [0, 0.8, 0.84], [0, 0, 0], false);
+  { const f = mesh(new THREE.TorusGeometry(0.3, 0.035, 8, 20, 1.3), black, g, [0, 0.3, 0.64], [0, Math.PI / 2, 1.75]); f.scale.z = 1.6; }
+  const plate = canvasTex(256, 160, (c, w, h) => { c.fillStyle = '#f4f4f0'; c.fillRect(0, 0, w, h); c.fillStyle = '#7a1418'; c.font = 'bold 22px sans-serif'; c.fillText('CIUDAD DE MÉXICO', 22, 30); c.fillStyle = '#111'; c.font = 'bold 74px sans-serif'; c.fillText('X7 4KR', 18, 118); });
+  mesh(new THREE.PlaneGeometry(0.18, 0.115), std(0xffffff, 0.4, 0, { map: plate }), g, [0, 0.6, 0.86], [-0.25, 0, 0], false);
+  // swingarm, shocks, chain, pegs
+  for (const s of [-1, 1]) {
+    rod(V3(s * 0.09, 0.37, 0.08), V3(s * 0.09, 0.3, 0.64), 0.02, black, g);
+    rod(V3(s * 0.11, 0.33, 0.56), V3(s * 0.11, 0.76, 0.45), 0.016, chrome, g);
+    rod(V3(s * 0.11, 0.42, 0.535), V3(s * 0.11, 0.66, 0.475), 0.03, std(0xd23a1c, 0.4, 0.3), g);
+    rod(V3(s * 0.13, 0.38, 0.1), V3(s * 0.25, 0.38, 0.1), 0.014, rubber, g);
+  }
+  rod(V3(-0.07, 0.42, 0.02), V3(-0.07, 0.36, 0.64), 0.008, black, g); rod(V3(-0.07, 0.34, 0.02), V3(-0.07, 0.24, 0.64), 0.008, black, g);
+  BIKE.peg = [V3(-0.21, 0.38, 0.1), V3(0.21, 0.38, 0.1)];
   // headlight beam
-  const beam = new THREE.SpotLight(0xfff4e0, 160, 45, 0.42, 0.5, 2); beam.position.set(0, 1.0, -0.9); beam.target.position.set(0, 0, -14);
+  const beam = new THREE.SpotLight(0xfff4e0, 160, 45, 0.42, 0.5, 2); beam.position.set(0, 0.96, -0.72); beam.target.position.set(0, 0, -14);
   g.add(beam, beam.target); BIKE.beam = beam;
 }
+
+// ───────────────────────────── Lucas ─────────────────────────────
+// Origin = seat contact. Bones: pelvis → spine → chest → neck → head (FK); arms and legs by two-bone IK.
+const BODY = { upper: 0.29, fore: 0.26, thigh: 0.44, shin: 0.43, shoulder: V3(0.175, 0.19, 0.0), hip: V3(0.092, -0.01, 0.0) };
 function buildLucas() {
-  // A stylised rider: smooth plastic-like forms, like the genre's characters. Origin = seat contact.
   const g = new THREE.Group(); scene.add(g); LUCAS.g = g;
-  const skin = std(0xc89070, 0.6), jacket = std(0x2b2f3a, 0.7), jeans = std(0x2f4a78, 0.75), shoe = std(0x1b1c20, 0.6);
-  const vestM = std(0x16171a, 0.55, 0, { transparent: true }), vestTrim = std(0xff7a1a, 0.45), helmetM = std(0xf4f4f2, 0.25, 0.1, { transparent: true }), visorM = std(0x05070a, 0.05, 0.9);
+  const R = rng(5);
+  // fabrics: nylon jacket, denim; colour maps painted along the tubes (u around, v along)
+  const fabricN = normalTex(256, 512, (c, w, h) => {
+    c.fillStyle = '#808080'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 3000; i++) { const v = 110 + R() * 40 | 0; c.fillStyle = `rgb(${v},${v},${v})`; c.fillRect(R() * w, R() * h, 2, 2); }
+    c.filter = 'blur(5px)';
+    for (let i = 0; i < 70; i++) { const y = R() * h, v = R() < 0.5 ? 70 : 185; c.strokeStyle = `rgba(${v},${v},${v},0.55)`; c.lineWidth = 3 + R() * 6; c.beginPath(); c.moveTo(-10, y); c.bezierCurveTo(w * 0.3, y + (R() - 0.5) * 40, w * 0.7, y + (R() - 0.5) * 40, w + 10, y + (R() - 0.5) * 20); c.stroke(); }
+    c.filter = 'none';
+  }, 1.6);
+  // elbow/knee folds: denser creases around v≈0.5
+  const foldN = normalTex(256, 512, (c, w, h) => {
+    c.fillStyle = '#808080'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2500; i++) { const v = 115 + R() * 30 | 0; c.fillStyle = `rgb(${v},${v},${v})`; c.fillRect(R() * w, R() * h, 2, 2); }
+    c.filter = 'blur(4px)';
+    for (let i = 0; i < 26; i++) { const y = h * (0.38 + R() * 0.24), v = R() < 0.5 ? 50 : 200; c.strokeStyle = `rgba(${v},${v},${v},0.7)`; c.lineWidth = 4 + R() * 6; c.beginPath(); c.moveTo(-10, y); c.bezierCurveTo(w * 0.33, y + (R() - 0.5) * 50, w * 0.66, y + (R() - 0.5) * 50, w + 10, y); c.stroke(); }
+    for (let i = 0; i < 18; i++) { const y = R() * h, v = R() < 0.5 ? 90 : 170; c.strokeStyle = `rgba(${v},${v},${v},0.4)`; c.lineWidth = 6; c.beginPath(); c.moveTo(-10, y); c.lineTo(w + 10, y + (R() - 0.5) * 60); c.stroke(); }
+    c.filter = 'none';
+  }, 2.2);
+  const JACKET = '#262a33', DENIM = '#2c4670';
+  const paintTex = (draw) => canvasTex(256, 512, (c, w, h) => draw(c, w, h, (v) => (1 - v) * h));
+  const sleeveMap = paintTex((c, w, h, Y) => {
+    c.fillStyle = JACKET; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#e06a1c'; c.fillRect(0, Y(0.24), w, 10);                                    // orange band on the upper arm
+    c.fillStyle = '#b9c0c8'; c.fillRect(0, Y(0.24) + 12, w, 4);                                 // reflective piping
+    c.fillStyle = '#16181d'; c.fillRect(0, 0, w, Y(0.9));                                       // knit cuff
+  });
+  const torsoMap = paintTex((c, w, h, Y) => {
+    c.fillStyle = JACKET; c.fillRect(0, 0, w, h);
+    c.fillStyle = DENIM; c.fillRect(0, Y(0.15), w, h - Y(0.15));
+    c.fillStyle = '#121316'; c.fillRect(0, Y(0.19), w, Y(0.15) - Y(0.19));                       // jacket hem band
+    c.fillStyle = '#0d0e10'; c.fillRect(0, 0, 3, Y(0.15)); c.fillRect(w - 3, 0, 3, Y(0.15));      // zip at the front (u = 0)
+  });
+  const jeansMap = paintTex((c, w, h, Y) => {
+    c.fillStyle = DENIM; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 6000; i++) { const k = R(); c.fillStyle = `rgba(${k < 0.5 ? '200,215,235' : '10,20,40'},0.08)`; c.fillRect(R() * w, R() * h, 3, 1); }
+    c.fillStyle = 'rgba(205,150,70,0.6)'; for (const u of [0.25, 0.75]) c.fillRect(u * w - 1, 0, 2, h);   // outseams
+  });
+  const fabric = (map, nmap, sheen) => new THREE.MeshPhysicalMaterial({ map, normalMap: nmap, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.78, sheen: 1, sheenRoughness: 0.55, sheenColor: new THREE.Color(sheen) });
+  const mSleeve = fabric(sleeveMap, foldN, 0x5a6070), mTorso = fabric(torsoMap, fabricN, 0x4a505c), mJeans = fabric(jeansMap, foldN, 0x5577aa);
+  // skeleton (FK groups)
+  const J = (parent, pos) => { const j = new THREE.Group(); j.position.copy(pos); parent.add(j); return j; };
+  const pelvis = J(g, V3(0, 0.1, 0)), spine = J(pelvis, V3(0, 0.1, 0)), chest = J(spine, V3(0, 0.2, 0)), neck = J(chest, V3(0, 0.24, 0)), head = J(neck, V3(0, 0.09, 0));
+  Object.assign(LUCAS, { pelvis, spine, chest, neck, head });
+  // skins
+  LUCAS.torso = new Loft(30, 32, mTorso, g);
+  LUCAS.arms = { 1: new Loft(30, 18, mSleeve, g), [-1]: new Loft(30, 18, mSleeve, g) };
+  LUCAS.legs = { 1: new Loft(32, 20, mJeans, g), [-1]: new Loft(32, 20, mJeans, g) };
+  { const b = mesh(new THREE.SphereGeometry(1, 28, 18), mJeans, pelvis, [0, -0.025, 0.015]); b.scale.set(0.165, 0.1, 0.13); }   // seat of the pants
+  // airbag vest: a fitted shell over the jacket (a loft that follows the torso), inflatable collar, X-ray internals
+  const vestTex = paintTex((c, w, h, Y) => {
+    c.fillStyle = '#1b1d21'; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#0f1013'; for (let v = 0.1; v < 1; v += 0.16) c.fillRect(0, Y(v), w, 3);           // quilting seams
+    c.fillStyle = '#ff7a1a'; c.fillRect(0, Y(0.62), w, 5); c.fillRect(0, Y(0.95), w, 4);              // piping
+    c.fillStyle = '#c9ced6'; c.fillRect(w * 0.06, Y(0.5), w * 0.08, 4);                                // small reflective tab
+  });
+  const vestM = new THREE.MeshPhysicalMaterial({ map: vestTex, normalMap: fabricN, roughness: 0.5, sheen: 0.6, sheenColor: new THREE.Color(0x404650), transparent: true });
+  const helmetTex = canvasTex(512, 256, (c, w, h) => { c.fillStyle = '#f1f1ee'; c.fillRect(0, 0, w, h); c.fillStyle = '#ff6a12'; c.fillRect(0, h * 0.18, w, 14); c.fillStyle = '#16181c'; c.fillRect(0, h * 0.18 + 16, w, 6); c.fillRect(w * 0.73, 0, 10, h * 0.5); c.fillStyle = '#ff6a12'; c.fillRect(w * 0.73 + 12, 0, 6, h * 0.5); });
+  const helmetM = new THREE.MeshPhysicalMaterial({ map: helmetTex, roughness: 0.28, metalness: 0.05, clearcoat: 1, clearcoatRoughness: 0.05, transparent: true });
   MAT.vest = vestM; MAT.helmet = helmetM;
-  const J = (parent, pos, rot = [0, 0, 0]) => { const j = new THREE.Group(); j.position.set(...pos); j.rotation.set(...rot); parent.add(j); return j; };
-  const limb = (parent, r, len, mat, along = -1) => mesh(new THREE.CapsuleGeometry(r, len, 6, 12), mat, parent, [0, along * len / 2, 0]);
-  const pelvis = J(g, [0, 0.05, 0.05]); LUCAS.pelvis = pelvis;
-  mesh(rbox(0.34, 0.2, 0.24, 0.09), jeans, pelvis, [0, 0.05, 0]);
-  const spine = J(pelvis, [0, 0.12, 0], [-0.55, 0, 0]); LUCAS.spine = spine;   // leaning forward
-  const torso = mesh(new THREE.CapsuleGeometry(0.17, 0.32, 8, 16), jacket, spine, [0, 0.26, 0]); torso.scale.set(1.1, 1, 0.78);
-  // airbag vest: a quilted shell + collar; LUCAS.inflate morphs it
-  const vest = new THREE.Group(); spine.add(vest); LUCAS.vest = vest;
-  const shell = mesh(new THREE.CapsuleGeometry(0.185, 0.3, 8, 16), vestM, vest, [0, 0.27, 0]); shell.scale.set(1.12, 1, 0.84);
-  const collar = mesh(new THREE.TorusGeometry(0.13, 0.035, 10, 24), vestM, vest, [0, 0.55, -0.01], [Math.PI / 2, 0, 0]);
-  const chambers = [];
-  for (let i = 0; i < 3; i++) for (const s of [-1, 1]) chambers.push(mesh(new THREE.CapsuleGeometry(0.05, 0.14, 6, 10), vestM, vest, [s * 0.08, 0.2 + i * 0.11, -0.15], [0, 0, Math.PI / 2]));
-  for (let i = 0; i < 3; i++) chambers.push(mesh(new THREE.CapsuleGeometry(0.05, 0.22, 6, 10), vestM, vest, [0, 0.16 + i * 0.13, 0.15], [0, 0, Math.PI / 2]));
-  LUCAS.trim = mesh(new THREE.BoxGeometry(0.4, 0.025, 0.02), vestTrim, vest, [0, 0.42, -0.16], [0, 0, 0]);
-  Object.assign(LUCAS, { shell, collar, chambers });
-  // inside the vest (seen in X-ray): sensor module, gas cartridge, ducts
+  const vest = new THREE.Group(); chest.add(vest); LUCAS.vest = vest;
+  LUCAS.shell = new Loft(56, 60, vestM, g);
+  LUCAS.collar = mesh(new THREE.TorusGeometry(0.085, 0.026, 14, 36, Math.PI * 1.6), vestM, chest, [0, 0.245, 0.0], [Math.PI / 2 - 0.25, 0, Math.PI * 0.7]);
+  LUCAS.trim = mesh(new THREE.BoxGeometry(0.001, 0.001, 0.001), vestM, vest);   // legacy handle
   const inner = new THREE.Group(); vest.add(inner); LUCAS.inner = inner;
-  LUCAS.sensor = mesh(rbox(0.09, 0.06, 0.025, 0.008), hdr(0x40ff90, 5), inner, [0, 0.33, 0.17], [0, 0, 0], false);
-  mesh(rbox(0.08, 0.05, 0.03, 0.006), hdr(0x40ff90, 5), inner, [0.05, 0.36, -0.17], [0, 0, 0], false);       // chest accelerometer
-  LUCAS.cartridge = mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.12, 12), std(0xc0c4c8, 0.2, 1, { emissive: 0x40ff90, emissiveIntensity: 0.4 }), inner, [0.07, 0.12, 0.17], [0, 0, 0.3], false);
-  // gas ducts: cartridge → back panel → around to the chest and collar
+  LUCAS.sensor = mesh(rbox(0.1, 0.07, 0.025, 0.008), hdr(0x40ff90, 5), inner, [0, 0.12, 0.13], [0, 0, 0], false);
+  mesh(rbox(0.07, 0.045, 0.02, 0.006), hdr(0x40ff90, 5), inner, [0.06, 0.13, -0.13], [0, 0, 0], false);           // chest IMU
+  for (const s of [-1, 1]) mesh(rbox(0.04, 0.03, 0.03, 0.006), hdr(0x40ff90, 4), inner, [s * 0.15, 0.2, 0.04], [0, 0, 0], false);   // shoulder sensors
+  LUCAS.cartridge = mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.12, 14), std(0xc0c4c8, 0.2, 1, { emissive: 0x40ff90, emissiveIntensity: 0.4 }), inner, [0.07, -0.03, 0.13], [0, 0, 0.3], false);
   const ductM = xrayMat(2.2, [0.5, 1.0, 0.7]); LUCAS.ductM = ductM;
-  for (const pts of [[[0.07, 0.12, 0.17], [0.0, 0.25, 0.19], [-0.12, 0.35, 0.12], [-0.2, 0.3, -0.05], [-0.1, 0.25, -0.17]],
-                     [[0.07, 0.12, 0.17], [0.14, 0.3, 0.15], [0.2, 0.32, -0.02], [0.1, 0.27, -0.17]],
-                     [[0.0, 0.25, 0.19], [0.0, 0.48, 0.14], [0.0, 0.56, 0.06]]])
-    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(q => V3(...q))), 24, 0.016, 6), ductM, inner, [0, 0, 0], [0, 0, 0], false);
+  for (const pts of [[[0.07, -0.03, 0.13], [0.0, 0.08, 0.135], [-0.13, 0.15, 0.1], [-0.2, 0.12, -0.02], [-0.12, 0.08, -0.13]],
+                     [[0.07, -0.03, 0.13], [0.15, 0.1, 0.11], [0.2, 0.12, -0.02], [0.11, 0.1, -0.13]],
+                     [[0.0, 0.08, 0.135], [0.0, 0.2, 0.12], [0.0, 0.25, 0.06]]])
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(q => V3(...q))), 24, 0.014, 6), ductM, inner, [0, 0, 0], [0, 0, 0], false);
   inner.visible = false;
-  const neck = J(spine, [0, 0.5, -0.02], [0.45, 0, 0]);
-  mesh(new THREE.CapsuleGeometry(0.055, 0.06, 6, 10), skin, neck, [0, 0.05, 0]);
-  const head = J(neck, [0, 0.16, 0]); LUCAS.head = head;
-  const helmet = mesh(new THREE.SphereGeometry(0.155, 32, 24), helmetM, head, [0, 0.05, 0]); helmet.scale.set(1, 1.05, 1.12);
-  const visor = mesh(new THREE.SphereGeometry(0.16, 32, 16, -Math.PI / 2 - 0.95, 1.9, 1.15, 0.75), visorM, head, [0, 0.05, -0.006]); visor.scale.set(1, 1.05, 1.12);
-  mesh(new THREE.TorusGeometry(0.115, 0.03, 8, 24, Math.PI), helmetM, head, [0, -0.06, -0.07], [Math.PI / 2 + 0.35, 0, Math.PI]);   // chin bar
-  mesh(rbox(0.03, 0.035, 0.24, 0.012), std(0xff7a1a, 0.4), head, [0, 0.215, 0.03]);
-  // eyes behind the visor (for the blink)
-  LUCAS.eyes = [-1, 1].map(s => { const e = mesh(new THREE.SphereGeometry(0.014, 12, 8), std(0x111111, 0.3), head, [s * 0.04, 0.06, -0.13]); e.scale.set(1, 0.7, 0.5); return e; });
-  // arms reach for the bars
-  for (const s of [-1, 1]) {
-    const sh = J(spine, [s * 0.2, 0.44, 0], [-0.75, 0, s * 0.22]);
-    limb(sh, 0.068, 0.22, jacket);
-    const el = J(sh, [0, -0.29, 0], [-0.55, 0, 0]);
-    limb(el, 0.058, 0.2, jacket);
-    mesh(rbox(0.09, 0.11, 0.06, 0.025), std(0x111216, 0.6), el, [0, -0.29, 0]);
-    LUCAS['arm' + s] = sh;
+  // full-face helmet: a shaped shell with a chin bar, smoked visor and a small spoiler
+  {
+    const geo = new THREE.SphereGeometry(0.15, 56, 36), p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const front = ss(0.02, -0.12, z), low = ss(0.0, -0.12, y);
+      x *= 0.92; z *= 1.08; if (z > 0) z *= 1 + 0.08 * ss(0.05, -0.1, y);
+      if (y < -0.075) y = -0.075 + (y + 0.075) * 0.3;
+      y -= 0.035 * front * low; z -= 0.025 * front * low;                                         // chin bar
+      p.setXYZ(i, x, y, z);
+    }
+    geo.computeVertexNormals();
+    LUCAS.helmet = mesh(geo, helmetM, head, [0, 0.05, 0.005]);
+    const vis = new THREE.SphereGeometry(0.153, 40, 16, -Math.PI / 2 - 1.05, 2.1, 1.22, 0.62); vis.scale(0.93, 1, 1.09);
+    const visorM = new THREE.MeshPhysicalMaterial({ color: 0x07090c, roughness: 0.04, metalness: 0.6, clearcoat: 1, clearcoatRoughness: 0.02 });
+    LUCAS.visor = mesh(vis, visorM, head, [0, 0.05, 0.0]);
+    const lin = new THREE.SphereGeometry(0.145, 24, 12, 0, Math.PI * 2, Math.PI * 0.62, Math.PI * 0.38); mesh(lin, std(0x0a0a0c, 0.9, 0, { side: THREE.BackSide }), head, [0, 0.04, 0], [0, 0, 0], false);
+    // face behind the visor (seen only in the blink close-up)
+    const skin = std(0xb07a58, 0.55);
+    const face = mesh(new THREE.SphereGeometry(0.1, 24, 16), skin, head, [0, 0.03, -0.02], [0, 0, 0], false); face.scale.set(0.8, 1.05, 0.95);
+    LUCAS.eyes = [-1, 1].map(s => { const e = mesh(new THREE.SphereGeometry(0.012, 12, 8), std(0x111111, 0.2), head, [s * 0.032, 0.05, -0.105], [0, 0, 0], false); return e; });
   }
-  // legs to the pegs
+  // gloves: palm, four curled fingers, thumb, cuff — local frame X = thumb side (right hand), Y = back of hand, Z = fingers
+  const gloveM = std(0x101114, 0.62), knuckle = std(0x2a2c31, 0.4);
+  const glove = (side) => {
+    const root = new THREE.Group(); root.matrixAutoUpdate = false; g.add(root);
+    const ts = side;   // thumb on +X for the right hand, −X for the left
+    mesh(new THREE.CylinderGeometry(0.044, 0.042, 0.07, 16), gloveM, root, [0, 0, -0.03], [Math.PI / 2, 0, 0]);
+    mesh(rbox(0.088, 0.032, 0.095, 0.014), gloveM, root, [0, 0, 0.05]);
+    mesh(rbox(0.07, 0.008, 0.03, 0.004), knuckle, root, [0, 0.018, 0.08]);
+    const fingers = [];
+    [0.031, 0.011, -0.01, -0.029].forEach((x, i) => {
+      let par = J(root, V3(x * ts, -0.002, 0.095)); const lens = [0.042, 0.028, 0.022].map(l => l * (i === 3 ? 0.8 : 1));
+      const f = [];
+      lens.forEach((l, k) => { const seg = new THREE.Group(); par.add(seg); f.push(seg); const cg = new THREE.CapsuleGeometry(0.0105 - k * 0.0008, l, 4, 8); cg.rotateX(Math.PI / 2); cg.translate(0, 0, l / 2); mesh(cg, gloveM, seg); const nx = J(seg, V3(0, 0, l)); par = nx; });
+      fingers.push(f);
+    });
+    const th = J(root, V3(0.043 * ts, -0.012, 0.03)); th.rotation.set(0.5, 0.75 * ts, 0);
+    const tg = new THREE.CapsuleGeometry(0.012, 0.045, 4, 8); tg.rotateX(Math.PI / 2); tg.translate(0, 0, 0.03); mesh(tg, gloveM, th);
+    return { root, fingers, thumb: th };
+  };
+  LUCAS.gloves = { 1: glove(1), [-1]: glove(-1) };
+  // boots: shaft, foot, sole — local frame Y = up the shin, Z = toes
+  const bootM = std(0x0f0f11, 0.55, 0.1), soleM = std(0x2a2a2a, 0.9);
+  const boot = () => {
+    const root = new THREE.Group(); root.matrixAutoUpdate = false; g.add(root);
+    mesh(new THREE.CylinderGeometry(0.056, 0.05, 0.17, 18), bootM, root, [0, 0.07, 0]);
+    mesh(rbox(0.105, 0.09, 0.27, 0.04), bootM, root, [0, -0.035, 0.07]);
+    mesh(rbox(0.11, 0.025, 0.28, 0.01), soleM, root, [0, -0.085, 0.07]);
+    mesh(rbox(0.09, 0.05, 0.03, 0.01), soleM, root, [0, -0.07, -0.05]);
+    return root;
+  };
+  LUCAS.boots = { 1: boot(), [-1]: boot() };
+  // thermal delivery backpack with straps and a reflective band
+  const bagTex = canvasTex(256, 256, (c, w, h) => { c.fillStyle = '#e8641a'; c.fillRect(0, 0, w, h); c.fillStyle = '#1a1b1f'; c.fillRect(0, 0, w, 14); c.fillRect(0, h - 14, w, 14); c.fillStyle = '#c8ced6'; c.fillRect(0, h * 0.62, w, 12); c.fillStyle = '#fff'; c.font = 'bold 54px sans-serif'; c.fillText('ENVÍOS', 40, 120); });
+  const bag = mesh(rbox(0.38, 0.42, 0.24, 0.05), new THREE.MeshPhysicalMaterial({ map: bagTex, roughness: 0.6, sheen: 0.5, sheenColor: new THREE.Color(0xffa060) }), chest, [0, 0.07, 0.27], [0.05, 0, 0]);
+  LUCAS.bag = bag;
+  const strapM = std(0x141518, 0.7);
   for (const s of [-1, 1]) {
-    const hip = J(pelvis, [s * 0.11, 0, -0.02], [1.15, 0, s * 0.12]);
-    limb(hip, 0.075, 0.32, jeans);
-    const kn = J(hip, [0, -0.42, 0], [-1.9, 0, 0]);
-    limb(kn, 0.06, 0.32, jeans);
-    mesh(rbox(0.1, 0.08, 0.24, 0.03), shoe, kn, [0, -0.43, -0.06]);
-    LUCAS['leg' + s] = hip;
+    const pts = [[s * 0.1, 0.19, 0.17], [s * 0.105, 0.245, 0.05], [s * 0.11, 0.2, -0.125], [s * 0.115, 0.06, -0.14], [s * 0.165, -0.05, -0.105], [s * 0.19, -0.07, 0.03], [s * 0.15, -0.07, 0.16]];
+    mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(q => V3(...q))), 40, 0.009, 6), strapM, vest);
   }
-  // delivery backpack
-  const bag = mesh(rbox(0.36, 0.4, 0.2, 0.05), std(0xff7a1a, 0.55), spine, [0, 0.28, 0.25]); LUCAS.bag = bag;
-  mesh(new THREE.BoxGeometry(0.2, 0.08, 0.005), hdr(0xffffff, 1.2), bag, [0, 0.05, 0.102], [0, 0, 0], false);
-  { const ms = []; vest.traverse(o => { if (o.isMesh && o.material === vestM) ms.push(o); }); ms.forEach(o => dual(o, 0.8)); }
-  { const ms = []; head.traverse(o => { if (o.isMesh && o.material === helmetM) ms.push(o); }); ms.forEach(o => dual(o, 0.8)); }
+  LUCAS.straps = vest;
+  // X-ray twins: the vest and (for the crash-detection beat) the helmet
+  dual(LUCAS.shell.mesh, 0.8); dual(LUCAS.collar, 0.8); dual(LUCAS.helmet, 0.8);
+}
+
+// The pose: torso angles (FK) + limb targets (IK). Targets are in Lucas-local space.
+const _m4 = new THREE.Matrix4(), _x = V3(), _y = V3(), _z = V3();
+function setBasis(obj, pos, Y, Z) {   // place a matrixAutoUpdate=false group with the given Y and Z axes
+  _z.copy(Z).normalize(); _y.copy(Y); _y.addScaledVector(_z, -_y.dot(_z)).normalize(); _x.crossVectors(_y, _z);
+  obj.matrix.makeBasis(_x, _y, _z).setPosition(pos); obj.matrixWorldNeedsUpdate = true;
+}
+function poseLucas(P, inflate) {
+  const L = LUCAS, g = L.g;
+  L.pelvis.position.set(...P.pelvisPos); L.pelvis.rotation.set(...P.pelvis); L.spine.rotation.set(...P.spine);
+  L.chest.rotation.set(...P.chest); L.neck.rotation.set(...P.neck); L.head.rotation.set(...P.head);
+  g.updateMatrixWorld(true);
+  const inv = _m4.copy(g.matrixWorld).invert();
+  const loc = (obj, v) => obj.localToWorld(v.clone()).applyMatrix4(inv);
+  const dir = (obj, v) => loc(obj, v).sub(loc(obj, V3()));
+  // torso: hip centre → spine → chest → neck → head base
+  const tp = filletPath([loc(L.pelvis, V3(0, -0.02, 0)), loc(L.spine, V3()), loc(L.chest, V3()), loc(L.neck, V3()), loc(L.head, V3(0, 0.02, 0))], 0.09);
+  const fP = dir(L.pelvis, V3(0, 0, -1)), fC = dir(L.chest, V3(0, 0, -1)), fwd = (v) => V3().lerpVectors(fP, fC, ss(0.1, 0.6, v));
+  const W = kf([[0, 0.162], [0.1, 0.166], [0.22, 0.152], [0.4, 0.158], [0.55, 0.175], [0.66, 0.186], [0.76, 0.19], [0.84, 0.18], [0.89, 0.12], [0.94, 0.072], [1, 0.06]]);
+  const D = kf([[0, 0.112], [0.1, 0.112], [0.22, 0.1], [0.4, 0.104], [0.55, 0.114], [0.66, 0.12], [0.76, 0.112], [0.84, 0.096], [0.89, 0.08], [0.94, 0.066], [1, 0.06]]);
+  const PW = kf([[0, 2.2], [0.6, 2.4], [0.8, 3.0], [0.9, 2.2], [1, 2]]);
+  const OF = kf([[0, 0], [0.4, 0.004], [0.62, -0.006], [0.8, 0.012], [1, 0.012]]);   // chest forward, upper back rounded
+  L.torso.build(tp, fwd, (v) => ({ n: D(v), b: W(v), on: OF(v), p: PW(v) }));
+  // vest: same path, a padded layer from the waist to the shoulders; inflation puffs it out and quilts it
+  const k = inflate, env = (v) => Math.sqrt(Math.sin(Math.PI * clamp(v))), vr = (v) => 0.016 + k * (0.012 + 0.085 * env(v));   // tapers back onto the body at the hem and the neck
+  L.shell.build({ total: 0, at: (v, Pp, T) => tp.at(lerp(0.2, 0.93, v), Pp, T) }, (v) => fwd(lerp(0.2, 0.93, v)), (v) => {
+    const u = lerp(0.2, 0.93, v); return { n: D(u) + vr(v), b: W(u) + vr(v) * 0.8, on: OF(u), p: PW(u) };
+  }, k > 0 ? (v, a) => k * env(v) * 0.09 * (0.5 + 0.5 * Math.cos(a * 10)) * (0.6 + 0.4 * Math.cos(v * Math.PI * 7)) : null);
+  L.collar.scale.set(1 + 0.35 * k, 1 + 0.35 * k, 1 + 1.9 * k);
+  L.straps.scale.setScalar(1 + 0.3 * k);
+  // arms
+  for (const s of [1, -1]) {
+    const S = loc(L.chest, V3(s * BODY.shoulder.x, BODY.shoulder.y, BODY.shoulder.z)), S0 = loc(L.chest, V3(s * (BODY.shoulder.x - 0.05), BODY.shoulder.y + 0.02, 0));
+    const H = P.hands[s], [E, Wr] = ik2(S, H.pos, BODY.upper, BODY.fore, H.pole);
+    const path = filletPath([S0, S, E, Wr], 0.06), lu = (0.05 + BODY.upper) / (0.05 + BODY.upper + BODY.fore);
+    const pole = H.pole.clone(), AR = kf([[0, 0.066], [0.1, 0.07], [0.32, 0.062], [lu, 0.055], [0.75, 0.054], [0.93, 0.049], [1, 0.047]]);
+    L.arms[s].build(path, () => pole, (v) => { const r = AR(v); return { n: r * 0.92, b: r }; });
+    // glove: fingers along the hand direction, back of the hand up
+    const gl = L.gloves[s], fdir = H.dir ? H.dir.clone() : V3().subVectors(Wr, E).normalize();
+    setBasis(gl.root, Wr, H.up, fdir);
+    gl.fingers.forEach((f, i) => f.forEach((seg, j) => { seg.rotation.x = H.curl * [0.9, 1.25, 0.9][j] + 0.08; }));
+    gl.thumb.rotation.set(0.4 + 0.6 * H.curl, 0.75 * s, 0);
+  }
+  // legs
+  for (const s of [1, -1]) {
+    const Hp = loc(L.pelvis, V3(s * BODY.hip.x, BODY.hip.y, BODY.hip.z)), F = P.feet[s];
+    const [K, A] = ik2(Hp, F.pos, BODY.thigh, BODY.shin, F.pole);
+    const top = loc(L.pelvis, V3(s * 0.07, 0.06, 0.0));
+    const lk = (0.073 + BODY.thigh) / (0.073 + BODY.thigh + BODY.shin);
+    const pole = F.pole.clone();
+    L.legs[s].build(filletPath([top, Hp, K, A], 0.07), () => pole, (v) => {
+      const r = kf([[0, 0.085], [0.12, 0.09], [0.4, 0.074], [lk, 0.062], [0.62, 0.062], [0.75, 0.06], [0.92, 0.058], [1, 0.06]])(v); return { n: r, b: r * 0.94 };
+    });
+    setBasis(L.boots[s], A, V3().subVectors(K, A), F.toe);
+  }
+}
+// riding pose: hands on the grips, feet on the pegs (bike-space points → Lucas-local by the seat offset)
+const SEAT = V3(0, 0.84, 0.2);
+function ridePose() {
+  const hand = (s) => ({ pos: BIKE.grip[s > 0 ? 1 : 0].clone().sub(SEAT).add(V3(-s * 0.005, 0.035, 0.07)), pole: V3(s * 0.8, -0.6, 0.5), up: V3(0, 1, -0.35), dir: V3(-s * 0.15, -0.35, -1), curl: 1 });
+  const foot = (s) => ({ pos: BIKE.peg[s > 0 ? 1 : 0].clone().sub(SEAT).add(V3(0, 0.1, 0.07)), pole: V3(s * 0.25, 0.3, -1), toe: V3(s * 0.1, -0.25, -1) });
+  return { pelvisPos: [0, 0.1, 0], pelvis: [-0.12, 0, 0], spine: [-0.1, 0, 0], chest: [-0.08, 0, 0], neck: [0.2, 0, 0], head: [0.1, 0, 0],
+    hands: { 1: hand(1), [-1]: hand(-1) }, feet: { 1: foot(1), [-1]: foot(-1) } };
+}
+// thrown through the air: back arched, arms flung up and out, legs trailing
+function flyPose(u) {
+  const w = Math.sin(u * 9) * 0.06;
+  return { pelvisPos: [0, 0.1, 0], pelvis: [0.15, 0, 0.05], spine: [0.22, 0.05, 0], chest: [0.18, -0.05, 0.04], neck: [-0.15, 0, 0], head: [-0.25, 0.1, 0],
+    hands: { 1: { pos: V3(0.62, 0.95 + w, 0.02), pole: V3(0.3, -0.6, 0.8), up: V3(0.3, 0.2, 1), curl: 0.25 }, [-1]: { pos: V3(-0.6, 0.85 - w, 0.15), pole: V3(-0.3, -0.6, 0.8), up: V3(-0.3, 0.2, 1), curl: 0.3 } },
+    feet: { 1: { pos: V3(0.22, -0.55, -0.45), pole: V3(0.2, 0.2, -1), toe: V3(0.1, -0.8, -0.5) }, [-1]: { pos: V3(-0.2, -0.72, -0.12), pole: V3(-0.2, 0.3, -1), toe: V3(-0.1, -0.9, -0.3) } } };
+}
+function mixPose(A, B, k) {
+  const m = (a, b) => a.map((x, i) => lerp(x, b[i], k)), mv = (a, b) => V3().lerpVectors(a, b, k);
+  const limb = (a, b) => { const o = {}; for (const key in a) o[key] = typeof a[key] === 'number' ? lerp(a[key], b[key], k) : mv(a[key], b[key] ?? a[key]); return o; };
+  const o = {}; for (const key of ['pelvisPos', 'pelvis', 'spine', 'chest', 'neck', 'head']) o[key] = m(A[key], B[key]);
+  o.hands = { 1: limb(A.hands[1], B.hands[1]), [-1]: limb(A.hands[-1], B.hands[-1]) };
+  o.feet = { 1: limb(A.feet[1], B.feet[1]), [-1]: limb(A.feet[-1], B.feet[-1]) };
+  return o;
 }
 function buildTruck() {
   const g = new THREE.Group(); scene.add(g); TRUCK.g = g;   // facing -z, origin on the ground at the centre
@@ -405,21 +725,15 @@ function applyAll(t) {
   const tr = TRUCK_REL(s.w);
   TRUCK.g.position.set(s.bikeX + tr.x, 0, s.bikeZ + tr.z); TRUCK.g.rotation.set(0, tr.yaw, 0);
   // Lucas: on the seat, or thrown over the truck's cab and turning onto his back
-  LUCAS.g.position.set(s.bikeX, 0.84, s.bikeZ + 0.22); LUCAS.g.rotation.set(0, 0, s.lean);
-  LUCAS.arm1.rotation.set(-0.75, 0, 0.22); LUCAS['arm-1'].rotation.set(-0.75, 0, -0.22);
+  LUCAS.g.position.set(s.bikeX + SEAT.x, SEAT.y, s.bikeZ + SEAT.z); LUCAS.g.rotation.set(0, 0, s.lean);
+  let pose = ridePose();
   if (s.fly !== null) {
     const u = s.fly, e = 1 - Math.pow(1 - u, 1.6);
-    LUCAS.g.position.set(s.bikeX - 1.6 * e, 0.84 + 3.4 * Math.sin(Math.PI * Math.pow(u, 0.6)) - 0.6 * u * u * u, s.bikeZ + 0.22 - 10 * e);   // clears the cab (2.7 m)
+    LUCAS.g.position.set(s.bikeX - 1.6 * e, SEAT.y + 3.4 * Math.sin(Math.PI * Math.pow(u, 0.6)) - 0.6 * u * u * u, s.bikeZ + SEAT.z - 10 * e);   // clears the cab (2.7 m)
     LUCAS.g.rotation.set(1.9 * ss(0, 0.9, u), 0.3 * u, 0.25 * Math.sin(u * 3));   // pitches back to land on the vest
-    const spread = ss(0, 0.35, u);
-    LUCAS.arm1.rotation.set(lerp(-0.75, -2.4, spread), 0, lerp(0.22, 1.1, spread));
-    LUCAS['arm-1'].rotation.set(lerp(-0.75, -2.4, spread), 0, lerp(-0.22, -1.1, spread));
+    pose = mixPose(pose, flyPose(u), ss(0, 0.3, u));
   }
-  // vest inflation
-  const k = s.inflate;
-  LUCAS.shell.scale.set(1.12 + 0.18 * k, 1 + 0.08 * k, 0.84 + 0.32 * k);
-  LUCAS.collar.scale.set(1 + 0.25 * k, 1 + 0.25 * k, 1 + 1.6 * k); LUCAS.collar.position.y = 0.55 + 0.02 * k;
-  LUCAS.chambers.forEach(c => c.scale.set(1 + 0.9 * k, 1 + 0.25 * k, 1 + 0.9 * k));
+  poseLucas(pose, s.inflate);
   // X-ray (as in the genre): only the gadget turns into a green hologram, the rider stays solid
   const xv = clamp(s.xVest), xh = clamp(s.xHelmet);
   for (const [m, x] of [[MAT.vest, xv], [MAT.helmet, xh]]) { m.opacity = 1 - 0.9 * x; m.depthWrite = x < 0.5; }
@@ -542,7 +856,7 @@ buildCity(); buildBike(); buildLucas(); buildTruck(); buildLights(); buildStreak
 }
 buildPost();
 window.renderAt = renderAt; window.duration = 35.5; window.fps = FPS; window.W = W; window.H = HGT;
-window.__dbg = { scene, get STREAKS() { return STREAKS; }, LIGHTS };
+window.__dbg = { scene, get STREAKS() { return STREAKS; }, LIGHTS, LUCAS };
 window.qa = { setSub: (n) => SUB = n, setCam: (c) => CAM_OVERRIDE = c, setExposure: (e) => EXPOSURE = e,
   // luminance stats of the HDR frame (before tone mapping), with parts switched off, to find what blows out
   stats: (t, off = []) => {
