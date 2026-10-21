@@ -1,0 +1,374 @@
+[
+  {
+    "inicio": 0.0,
+    "fin": 0.6666666666666666,
+    "texto": "Leaving your",
+    "color": "blanco"
+  },
+  {
+    "inicio": 0.6666666666666666,
+    "fin": 1.0,
+    "texto": "leftovers",
+    "color": "blanco"
+  },
+  {
+    "inicio": 1.0,
+    "fin": 1.6666666666666667,
+    "texto": "on the bench",
+    "color": "blanco"
+  },
+  {
+    "inicio": 1.6666666666666667,
+    "fin": 2.0,
+    "texto": "till they",
+    "color": "blanco"
+  },
+  {
+    "inicio": 2.0,
+    "fin": 2.6666666666666665,
+    "texto": "go cold",
+    "color": "blanco"
+  },
+  {
+    "inicio": 2.6666666666666665,
+    "fin": 3.0,
+    "texto": "is how",
+    "color": "blanco"
+  },
+  {
+    "inicio": 3.1666666666666665,
+    "fin": 3.5,
+    "texto": "food poisoning",
+    "color": "blanco"
+  },
+  {
+    "inicio": 3.8333333333333335,
+    "fin": 4.666666666666667,
+    "texto": "starts",
+    "color": "blanco"
+  },
+  {
+    "inicio": 4.833333333333333,
+    "fin": 5.5,
+    "texto": "Modern fridges",
+    "color": "blanco"
+  },
+  {
+    "inicio": 5.5,
+    "fin": 6.166666666666667,
+    "texto": "can handle",
+    "color": "blanco"
+  },
+  {
+    "inicio": 6.166666666666667,
+    "fin": 7.166666666666667,
+    "texto": "warm food",
+    "color": "blanco"
+  },
+  {
+    "inicio": 7.166666666666667,
+    "fin": 7.666666666666667,
+    "texto": "The waiting",
+    "color": "blanco"
+  },
+  {
+    "inicio": 7.666666666666667,
+    "fin": 8.666666666666666,
+    "texto": "is the problem",
+    "color": "blanco"
+  },
+  {
+    "inicio": 8.833333333333334,
+    "fin": 9.333333333333332,
+    "texto": "Food poisoning",
+    "color": "blanco"
+  },
+  {
+    "inicio": 9.333333333333334,
+    "fin": 10.166666666666666,
+    "texto": "BACTERIA GROW AT 5 TO 6O°C bacteria grow",
+    "color": "blanco"
+  },
+  {
+    "inicio": 10.5,
+    "fin": 11.0,
+    "texto": "BACTERIA GROW AT5TO 6O°C between 5",
+    "color": "blanco"
+  },
+  {
+    "inicio": 11.0,
+    "fin": 12.333333333333332,
+    "texto": "BACTERIA GROWAT5TO6O°C and 60 degrees",
+    "color": "blanco"
+  },
+  {
+    "inicio": 12.333333333333334,
+    "fin": 13.0,
+    "texto": "and your kitchen",
+    "color": "blanco"
+  },
+  {
+    "inicio": 13.0,
+    "fin": 13.5,
+    "texto": "sits in",
+    "color": "blanco"
+  },
+  {
+    "inicio": 13.5,
+    "fin": 14.333333333333332,
+    "texto": "that range",
+    "color": "blanco"
+  },
+  {
+    "inicio": 14.333333333333334,
+    "fin": 15.0,
+    "texto": "Some survive",
+    "color": "blanco"
+  },
+  {
+    "inicio": 15.0,
+    "fin": 15.333333333333332,
+    "texto": "cooking",
+    "color": "blanco"
+  },
+  {
+    "inicio": 15.333333333333334,
+    "fin": 16.833333333333336,
+    "texto": "as tough spores",
+    "color": "blanco"
+  },
+  {
+    "inicio": 16.833333333333332,
+    "fin": 17.333333333333336,
+    "texto": "As the food",
+    "color": "blanco"
+  },
+  {
+    "inicio": 17.333333333333332,
+    "fin": 18.0,
+    "texto": "cools",
+    "color": "blanco"
+  },
+  {
+    "inicio": 18.0,
+    "fin": 18.666666666666668,
+    "texto": "they wake up",
+    "color": "blanco"
+  },
+  {
+    "inicio": 18.666666666666668,
+    "fin": 19.666666666666668,
+    "texto": "and multiply",
+    "color": "blanco"
+  },
+  {
+    "inicio": 20.0,
+    "fin": 20.333333333333336,
+    "texto": "A few",
+    "color": "blanco"
+  },
+  {
+    "inicio": 20.5,
+    "fin": 21.0,
+    "texto": "like the ones",
+    "color": "blanco"
+  },
+  {
+    "inicio": 21.0,
+    "fin": 22.0,
+    "texto": "in cooked rice",
+    "color": "blanco"
+  },
+  {
+    "inicio": 22.0,
+    "fin": 22.5,
+    "texto": "leave behind",
+    "color": "blanco"
+  },
+  {
+    "inicio": 22.5,
+    "fin": 23.0,
+    "texto": "a poison",
+    "color": "blanco"
+  },
+  {
+    "inicio": 23.166666666666668,
+    "fin": 23.666666666666668,
+    "texto": "that even",
+    "color": "blanco"
+  },
+  {
+    "inicio": 23.666666666666668,
+    "fin": 24.166666666666668,
+    "texto": "boiling",
+    "color": "blanco"
+  },
+  {
+    "inicio": 24.166666666666668,
+    "fin": 25.166666666666668,
+    "texto": "won't destroy",
+    "color": "blanco"
+  },
+  {
+    "inicio": 26.166666666666668,
+    "fin": 26.833333333333336,
+    "texto": "on the stove",
+    "color": "blanco"
+  },
+  {
+    "inicio": 26.833333333333332,
+    "fin": 27.166666666666668,
+    "texto": "Overnight?",
+    "color": "blanco"
+  },
+  {
+    "inicio": 27.166666666666668,
+    "fin": 28.666666666666668,
+    "texto": "Throw it out",
+    "color": "blanco"
+  },
+  {
+    "inicio": 28.666666666666668,
+    "fin": 29.333333333333336,
+    "texto": "Reheating",
+    "color": "blanco"
+  },
+  {
+    "inicio": 29.333333333333332,
+    "fin": 29.833333333333336,
+    "texto": "won't make",
+    "color": "blanco"
+  },
+  {
+    "inicio": 29.833333333333332,
+    "fin": 30.5,
+    "texto": "it safe",
+    "color": "blanco"
+  },
+  {
+    "inicio": 30.5,
+    "fin": 31.0,
+    "texto": "And one",
+    "color": "blanco"
+  },
+  {
+    "inicio": 31.0,
+    "fin": 31.5,
+    "texto": "big pot",
+    "color": "blanco"
+  },
+  {
+    "inicio": 31.5,
+    "fin": 32.166666666666664,
+    "texto": "cools from",
+    "color": "blanco"
+  },
+  {
+    "inicio": 32.166666666666664,
+    "fin": 33.33333333333333,
+    "texto": "the outside in",
+    "color": "blanco"
+  },
+  {
+    "inicio": 33.333333333333336,
+    "fin": 33.83333333333333,
+    "texto": "Even in",
+    "color": "blanco"
+  },
+  {
+    "inicio": 33.833333333333336,
+    "fin": 34.5,
+    "texto": "the fridge",
+    "color": "blanco"
+  },
+  {
+    "inicio": 34.5,
+    "fin": 35.0,
+    "texto": "the middle",
+    "color": "blanco"
+  },
+  {
+    "inicio": 35.0,
+    "fin": 35.666666666666664,
+    "texto": "stays warm",
+    "color": "blanco"
+  },
+  {
+    "inicio": 35.666666666666664,
+    "fin": 36.666666666666664,
+    "texto": "for hours",
+    "color": "blanco"
+  },
+  {
+    "inicio": 36.833333333333336,
+    "fin": 37.166666666666664,
+    "texto": "Split your",
+    "color": "blanco"
+  },
+  {
+    "inicio": 37.166666666666664,
+    "fin": 37.666666666666664,
+    "texto": "leftovers",
+    "color": "blanco"
+  },
+  {
+    "inicio": 37.666666666666664,
+    "fin": 38.33333333333333,
+    "texto": "into shallow",
+    "color": "blanco"
+  },
+  {
+    "inicio": 38.333333333333336,
+    "fin": 39.166666666666664,
+    "texto": "containers",
+    "color": "blanco"
+  },
+  {
+    "inicio": 39.166666666666664,
+    "fin": 39.666666666666664,
+    "texto": "The moment",
+    "color": "blanco"
+  },
+  {
+    "inicio": 39.666666666666664,
+    "fin": 40.666666666666664,
+    "texto": "the steam stops",
+    "color": "blanco"
+  },
+  {
+    "inicio": 40.666666666666664,
+    "fin": 41.666666666666664,
+    "texto": "into the fridge",
+    "color": "blanco"
+  },
+  {
+    "inicio": 41.666666666666664,
+    "fin": 42.666666666666664,
+    "texto": "still warm",
+    "color": "blanco"
+  },
+  {
+    "inicio": 42.666666666666664,
+    "fin": 43.5,
+    "texto": "Never more",
+    "color": "blanco"
+  },
+  {
+    "inicio": 43.5,
+    "fin": 43.83333333333333,
+    "texto": "than 2 hours",
+    "color": "blanco"
+  },
+  {
+    "inicio": 43.833333333333336,
+    "fin": 44.166666666666664,
+    "texto": "FRIDGEITWITHIN 2 HOURS than 2 hours",
+    "color": "blanco"
+  },
+  {
+    "inicio": 44.166666666666664,
+    "fin": 45.166666666666664,
+    "texto": "FRIDGE IT WITHIN 2 HOURS after cooking",
+    "color": "blanco"
+  }
+]

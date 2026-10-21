@@ -1,0 +1,230 @@
+[
+  {
+    "inicio": 0.16666666666666666,
+    "fin": 0.8333333333333333,
+    "texto": "Turning your aircon",
+    "color": "blanco"
+  },
+  {
+    "inicio": 1.0,
+    "fin": 1.8333333333333335,
+    "texto": "down to 18",
+    "color": "blanco"
+  },
+  {
+    "inicio": 1.8333333333333333,
+    "fin": 2.6666666666666665,
+    "texto": "won't cool you",
+    "color": "blanco"
+  },
+  {
+    "inicio": 2.6666666666666665,
+    "fin": 3.5,
+    "texto": "any faster",
+    "color": "blanco"
+  },
+  {
+    "inicio": 3.5,
+    "fin": 4.0,
+    "texto": "Your aircon",
+    "color": "blanco"
+  },
+  {
+    "inicio": 4.0,
+    "fin": 5.333333333333334,
+    "texto": "doesn't make cold",
+    "color": "blanco"
+  },
+  {
+    "inicio": 5.333333333333333,
+    "fin": 6.166666666666667,
+    "texto": "It pulls the heat",
+    "color": "blanco"
+  },
+  {
+    "inicio": 6.166666666666667,
+    "fin": 7.333333333333334,
+    "texto": "out of your room",
+    "color": "blanco"
+  },
+  {
+    "inicio": 7.333333333333333,
+    "fin": 8.166666666666666,
+    "texto": "In here",
+    "color": "blanco"
+  },
+  {
+    "inicio": 8.166666666666666,
+    "fin": 9.0,
+    "texto": "a fan drags",
+    "color": "blanco"
+  },
+  {
+    "inicio": 9.333333333333334,
+    "fin": 11.0,
+    "texto": "across ice-cold pipes",
+    "color": "blanco"
+  },
+  {
+    "inicio": 11.0,
+    "fin": 11.666666666666666,
+    "texto": "The pressure inside",
+    "color": "blanco"
+  },
+  {
+    "inicio": 11.666666666666666,
+    "fin": 12.833333333333332,
+    "texto": "is so low",
+    "color": "blanco"
+  },
+  {
+    "inicio": 12.833333333333334,
+    "fin": 13.5,
+    "texto": "the liquid boils",
+    "color": "blanco"
+  },
+  {
+    "inicio": 13.5,
+    "fin": 15.166666666666666,
+    "texto": "at just 5 degrees",
+    "color": "blanco"
+  },
+  {
+    "inicio": 15.166666666666666,
+    "fin": 16.0,
+    "texto": "As it boils",
+    "color": "blanco"
+  },
+  {
+    "inicio": 16.0,
+    "fin": 17.0,
+    "texto": "it soaks up the heat",
+    "color": "blanco"
+  },
+  {
+    "inicio": 17.0,
+    "fin": 18.166666666666668,
+    "texto": "and turns to gas",
+    "color": "blanco"
+  },
+  {
+    "inicio": 18.333333333333332,
+    "fin": 18.833333333333336,
+    "texto": "Out here",
+    "color": "blanco"
+  },
+  {
+    "inicio": 18.833333333333332,
+    "fin": 19.333333333333336,
+    "texto": "a compressor",
+    "color": "blanco"
+  },
+  {
+    "inicio": 19.333333333333332,
+    "fin": 20.5,
+    "texto": "squeezes that gas",
+    "color": "blanco"
+  },
+  {
+    "inicio": 20.5,
+    "fin": 22.166666666666668,
+    "texto": "until it's scorching hot",
+    "color": "blanco"
+  },
+  {
+    "inicio": 22.166666666666668,
+    "fin": 22.666666666666668,
+    "texto": "and the heat",
+    "color": "blanco"
+  },
+  {
+    "inicio": 22.666666666666668,
+    "fin": 24.0,
+    "texto": "blasts outside",
+    "color": "blanco"
+  },
+  {
+    "inicio": 24.0,
+    "fin": 25.166666666666668,
+    "texto": "Then, a tiny valve",
+    "color": "blanco"
+  },
+  {
+    "inicio": 25.166666666666668,
+    "fin": 26.333333333333336,
+    "texto": "drops the pressure",
+    "color": "blanco"
+  },
+  {
+    "inicio": 26.333333333333332,
+    "fin": 26.833333333333336,
+    "texto": "and the liquid",
+    "color": "blanco"
+  },
+  {
+    "inicio": 26.833333333333332,
+    "fin": 28.166666666666668,
+    "texto": "goes ice-cold again",
+    "color": "blanco"
+  },
+  {
+    "inicio": 28.166666666666668,
+    "fin": 29.166666666666668,
+    "texto": "But it can only",
+    "color": "blanco"
+  },
+  {
+    "inicio": 29.166666666666668,
+    "fin": 30.666666666666668,
+    "texto": "move heat so fast",
+    "color": "blanco"
+  },
+  {
+    "inicio": 30.666666666666668,
+    "fin": 31.666666666666668,
+    "texto": "18 just keeps it",
+    "color": "blanco"
+  },
+  {
+    "inicio": 31.666666666666668,
+    "fin": 32.5,
+    "texto": "running longer",
+    "color": "blanco"
+  },
+  {
+    "inicio": 32.5,
+    "fin": 33.666666666666664,
+    "texto": "and every degree lower",
+    "color": "blanco"
+  },
+  {
+    "inicio": 33.666666666666664,
+    "fin": 35.0,
+    "texto": "adds up to 10%",
+    "color": "blanco"
+  },
+  {
+    "inicio": 35.0,
+    "fin": 35.83333333333333,
+    "texto": "to your bill",
+    "color": "blanco"
+  },
+  {
+    "inicio": 35.833333333333336,
+    "fin": 37.0,
+    "texto": "Set it to 25",
+    "color": "blanco"
+  },
+  {
+    "inicio": 37.166666666666664,
+    "fin": 38.5,
+    "texto": "It cools just as fast",
+    "color": "blanco"
+  },
+  {
+    "inicio": 38.5,
+    "fin": 39.83333333333333,
+    "texto": "for a lot less",
+    "color": "blanco"
+  }
+]
