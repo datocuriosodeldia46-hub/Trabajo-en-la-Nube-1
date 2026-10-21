@@ -4,3 +4,5 @@ render/frames/
 render/*.txt
 __pycache__/
 audio/stems/
+render/parts/
+render/parts.txt

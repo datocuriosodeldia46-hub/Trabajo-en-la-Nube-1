@@ -58,6 +58,10 @@ async function frameRGBA(t) {
     return btoa(s);
   }, t).then((b64) => Buffer.from(b64, 'base64'));
 }
+async function frameJPEG(t) {
+  const url = await page.evaluate((t) => { window.renderAt(t); return document.getElementById('c').toDataURL('image/jpeg', 0.96); }, t);
+  return Buffer.from(url.split(',')[1], 'base64');
+}
 async function png(t, file) {
   const url = await page.evaluate((t) => { window.renderAt(t); return document.getElementById('c').toDataURL('image/png'); }, t);
   await writeFile(file, Buffer.from(url.split(',')[1], 'base64'));
@@ -113,14 +117,14 @@ if (flag('video')) {
   const out = arg('out', join(ROOT, 'render', 'claw_machine.mp4'));
   const wav = join(ROOT, 'audio', 'mix.wav');
   const withAudio = existsSync(wav) && !flag('mute');
-  const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba', '-s', '1920x1080', '-r', String(fps), '-i', '-',
+  const ff = spawn('ffmpeg', ['-v', 'error', '-y', '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(fps), '-i', '-',
     ...(withAudio ? ['-ss', String(from), '-t', String(to - from), '-i', wav] : []),
     '-c:v', 'libx264', '-profile:v', 'high', '-preset', 'slow', '-b:v', '25M', '-maxrate', '30M', '-bufsize', '50M', '-pix_fmt', 'yuv420p', '-r', String(fps),
     ...(withAudio ? ['-c:a', 'aac', '-b:a', '256k', '-shortest'] : []), '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
   const n0 = Math.round(from * fps), n1 = Math.round(to * fps);
   const t0 = Date.now();
   for (let f = n0; f < n1; f++) {
-    const buf = await frameRGBA(f / fps);
+    const buf = await frameJPEG(f / fps);
     if (!ff.stdin.write(buf)) await new Promise((r) => ff.stdin.once('drain', r));
     if ((f - n0) % 30 === 0) { const s = (Date.now() - t0) / 1000; console.log(`frame ${f}/${n1}  ${(s / Math.max(f - n0, 1)).toFixed(2)} s/frame  eta ${((n1 - f) * s / Math.max(f - n0, 1) / 60).toFixed(1)} min`); }
   }
