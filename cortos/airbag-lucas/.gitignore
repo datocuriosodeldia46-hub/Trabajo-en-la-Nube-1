@@ -3,3 +3,5 @@ render/stills/
 render/parts/
 render/*.txt
 _q.mjs
+render/preview/
+audio/stems/

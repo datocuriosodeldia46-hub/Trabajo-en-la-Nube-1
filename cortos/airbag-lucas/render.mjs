@@ -30,7 +30,7 @@ await page.route('https://cdn.jsdelivr.net/npm/**', async (route) => {
   if (!m) return route.abort();
   route.fulfill({ status: 200, contentType: 'text/javascript', body: await readFile(join(ROOT, 'node_modules', m[1], m[2])) });
 });
-await page.goto(`http://127.0.0.1:${server.address().port}/index.html?render=1&sub=${arg('sub', 1)}`);
+await page.goto(`http://127.0.0.1:${server.address().port}/index.html?render=1&sub=${arg('sub', 1)}&scale=${arg('scale', 1)}`);
 await page.waitForFunction(() => window.ready === true, null, { timeout: 300000 });
 await mkdir(join(ROOT, 'render', 'stills'), { recursive: true });
 const shot = async (t, type = 'image/png', q) => Buffer.from((await page.evaluate(([t, type, q]) => { window.renderAt(t); return document.getElementById('c').toDataURL(type, q); }, [t, type, q])).split(',')[1], 'base64');
