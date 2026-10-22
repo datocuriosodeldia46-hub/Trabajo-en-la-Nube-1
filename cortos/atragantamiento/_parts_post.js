@@ -35,7 +35,7 @@ function buildPost() {
   RT.up = pass(`uniform sampler2D uS, uB; uniform vec2 uPx;
     void main(){ vec2 d=uPx; vec3 c=texture(uS,vUv+vec2(-d.x,0)).rgb+texture(uS,vUv+vec2(d.x,0)).rgb+texture(uS,vUv+vec2(0,-d.y)).rgb+texture(uS,vUv+vec2(0,d.y)).rgb; o=vec4(c*0.25+texture(uB,vUv).rgb,1.0); }`,
     { uS: { value: null }, uB: { value: null }, uPx: { value: new THREE.Vector2() } });
-  RT.final = pass(`uniform sampler2D uA, uDof, uBloom; uniform float uFocus, uK, uMax, uExp, uBloomK, uTime, uGrain;
+  RT.final = pass(`uniform sampler2D uA, uDof, uBloom, uHud; uniform float uFocus, uK, uMax, uExp, uBloomK, uTime, uGrain, uDesat, uDark; uniform vec3 uTint;
     float coc(float z){ return clamp(uK*(z-uFocus)/max(z,1e-3), -uMax, uMax); }
     vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14),0.0,1.0); }
     vec3 toSRGB(vec3 c){ return mix(c*12.92, 1.055*pow(c,vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
@@ -43,9 +43,10 @@ function buildPost() {
     void main(){ vec4 a=texture(uA,vUv); float cf=abs(coc(a.a)); vec4 dof=texture(uDof,vUv);
       vec3 c=mix(a.rgb,dof.rgb,smoothstep(0.6,2.2,max(cf,abs(dof.a)*2.0*step(dof.a,0.0))));
       c+=texture(uBloom,vUv).rgb*uBloomK; vec2 q=vUv-0.5; c*=1.0-0.55*dot(q*vec2(1.0,0.7),q*vec2(1.0,0.7))*1.6;
-      c=aces(c*uExp); c=toSRGB(c); c+=(h(vUv*vec2(1080.0,1920.0))-0.5)*uGrain; c+=(h(vUv*vec2(1091.0,1931.0)+3.1)-0.5)/255.0; o=vec4(c,1.0); }`,
+      c*=uTint; float lum=dot(c,vec3(0.2126,0.7152,0.0722)); c=mix(c,vec3(lum)*vec3(1.0,0.97,0.95),uDesat); c*=1.0-uDark*smoothstep(0.15,0.75,length(q*vec2(1.0,0.75))*1.6);
+      c=aces(c*uExp); c=toSRGB(c); vec4 hud=texture(uHud,vUv); c=mix(c,hud.rgb,hud.a); c+=(h(vUv*vec2(1080.0,1920.0))-0.5)*uGrain; c+=(h(vUv*vec2(1091.0,1931.0)+3.1)-0.5)/255.0; o=vec4(c,1.0); }`,
     { uA: { value: RT.acc.texture }, uDof: { value: RT.dof.texture }, uBloom: { value: RT.bloomUp[0].texture }, uFocus: { value: 3 }, uK: { value: 8 }, uMax: { value: 20 },
-      uExp: { value: 1 }, uBloomK: { value: 0.09 }, uTime: { value: 0 }, uGrain: { value: 0.02 } });
+      uExp: { value: 1 }, uBloomK: { value: 0.09 }, uTime: { value: 0 }, uGrain: { value: 0.02 }, uHud: { value: null }, uDesat: { value: 0 }, uDark: { value: 0 }, uTint: { value: new THREE.Vector3(1, 1, 1) } });
 }
 let EXPOSURE = 1.0;
 function setScene(t, si = shotAt(t)) {
@@ -75,7 +76,7 @@ function renderAt(t) {
   RT.coc.run(RT.half); RT.gather.m.uniforms.uMax.value = Math.min(cam.coc * 0.5 + 1, 11); RT.gather.run(RT.dof);
   RT.bloom.forEach((rt, i) => { const u = RT.down.m.uniforms; u.uS.value = i === 0 ? RT.acc.texture : RT.bloom[i - 1].texture; u.uPx.value.set(1 / rt.width, 1 / rt.height); u.uThr.value = i === 0 ? 1.2 : 0; RT.down.run(rt); });
   for (let i = RT.bloomUp.length - 1; i >= 0; i--) { const u = RT.up.m.uniforms; u.uS.value = i === RT.bloomUp.length - 1 ? RT.bloom[i + 1].texture : RT.bloomUp[i + 1].texture; u.uB.value = RT.bloom[i].texture; u.uPx.value.set(1 / RT.bloomUp[i].width, 1 / RT.bloomUp[i].height); RT.up.run(RT.bloomUp[i]); }
-  const f = RT.final.m.uniforms; f.uExp.value = EXPOSURE; f.uTime.value = t; RT.final.run(null);
+  const f = RT.final.m.uniforms; f.uExp.value = EXPOSURE; f.uTime.value = t; f.uHud.value = HUD.tex; f.uDesat.value = POST.desat; f.uDark.value = POST.dark; f.uTint.value.set(...POST.tint); RT.final.run(null);
 }
 
 // ───────────────────────────── boot ─────────────────────────────

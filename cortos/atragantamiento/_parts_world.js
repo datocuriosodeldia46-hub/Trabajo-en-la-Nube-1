@@ -257,3 +257,58 @@ function buildHouse() {
   HOUSE.kchair = new THREE.Group(); kg.add(HOUSE.kchair); HOUSE.kchair.position.set(0.1, 0, -0.9); HOUSE.kchair.rotation.y = Math.PI;
   { const c = HOUSE.kchair, cw = std(0x6a4426, 0.55); mesh(rbox(0.44, 0.05, 0.42, 0.015), cw, c, [0, 0.46, 0], [0, 0, 0], true); for (const [x, z] of [[-0.19, -0.18], [0.19, -0.18], [-0.19, 0.18], [0.19, 0.18]]) mesh(new THREE.CylinderGeometry(0.02, 0.018, 0.46, 8), cw, c, [x, 0.23, z], [0, 0, 0], true); for (const x of [-0.19, 0.19]) mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.5, 8), cw, c, [x, 0.72, 0.19], [0, 0, 0], true); mesh(rbox(0.42, 0.12, 0.03, 0.01), cw, c, [0, 0.9, 0.19], [0, 0, 0], true); }
 }
+
+// ───────────────────────────── anatomy (inside "you", seen in X-ray) ─────────────────────────────
+// Stylised and readable: air = blue, food/obstruction = red-brown, the right action = green.
+// Everything lives in the chest bone's space (x right, y up, −z forward); the neck/head are kept near neutral in X-ray shots.
+const ANAT = {};
+function buildAnatomy(T) {
+  const g = new THREE.Group(); T.chest.add(g); ANAT.g = g; g.visible = false;
+  const s = T.s;
+  const tubeM = (c, e = 0) => new THREE.MeshPhysicalMaterial({ color: c, roughness: 0.35, clearcoat: 0.6, emissive: c, emissiveIntensity: e, transparent: true, opacity: 0.95 });
+  const tube = (pts, r, m, seg = 40) => { const cv = new THREE.CatmullRomCurve3(pts.map(p => V3(...p).multiplyScalar(s))); const ms = mesh(new THREE.TubeGeometry(cv, seg, r * s, 18), m, g, [0, 0, 0], [0, 0, 0], false); ms.userData.curve = cv; return ms; };
+  // throat: mouth → pharynx; esophagus behind, trachea in front
+  ANAT.pharynx = tube([[0, 0.355, -0.11], [0, 0.352, -0.06], [0, 0.33, -0.025], [0, 0.29, -0.02]], 0.018, tubeM(0xd86a78, 0.05));
+  ANAT.esoM = tubeM(0xe88a8a, 0.05);
+  ANAT.eso = tube([[0, 0.29, -0.012], [0, 0.22, -0.002], [0, 0.12, 0.004], [0, 0.0, 0.01], [0, -0.1, 0.0]], 0.012, ANAT.esoM);
+  ANAT.traM = tubeM(0x5a9ae0, 0.15);
+  ANAT.tra = tube([[0, 0.275, -0.036], [0, 0.2, -0.034], [0, 0.12, -0.03], [0, 0.07, -0.026]], 0.0155, ANAT.traM);
+  for (let i = 0; i < 9; i++) { const y = 0.255 - i * 0.021; mesh(new THREE.TorusGeometry(0.0163 * s, 0.0028 * s, 8, 24), std(0xa8d0ff, 0.4), g, [0, y * s, (-0.035 + i * 0.0008) * s], [Math.PI / 2, 0, 0], false); }
+  for (const sx of [-1, 1]) tube([[0, 0.07, -0.026], [sx * 0.02, 0.05, -0.022], [sx * 0.05, 0.035, -0.015], [sx * 0.07, 0.02, -0.01]], 0.01, ANAT.traM, 20);
+  // epiglottis: a flap hinged at the front of the larynx — closed (over the trachea) when swallowing
+  ANAT.epiHinge = new THREE.Group(); ANAT.epiHinge.position.set(0, 0.282 * s, -0.05 * s); g.add(ANAT.epiHinge);
+  { const sh = new THREE.Shape(); sh.moveTo(-0.014, 0); sh.quadraticCurveTo(-0.018, 0.028, 0, 0.034); sh.quadraticCurveTo(0.018, 0.028, 0.014, 0); sh.lineTo(-0.014, 0);
+    const ge = new THREE.ExtrudeGeometry(sh, { depth: 0.003, bevelEnabled: true, bevelSize: 0.0015, bevelThickness: 0.0015, bevelSegments: 2 }); ge.scale(s, s, s); ge.rotateX(-Math.PI / 2);
+    ANAT.epi = mesh(ge, new THREE.MeshPhysicalMaterial({ color: 0xff7aa0, roughness: 0.3, emissive: 0xff4a80, emissiveIntensity: 0.25 }), ANAT.epiHinge, [0, 0, 0], [0, 0, 0], false); }
+  // vocal cords
+  ANAT.cords = [-1, 1].map(sx => mesh(new THREE.CapsuleGeometry(0.0025 * s, 0.018 * s, 4, 8), std(0xfff0e8, 0.4), g, [sx * 0.005 * s, 0.258 * s, -0.036 * s], [Math.PI / 2, 0, sx * 0.25], false));
+  // lungs with the trapped air glowing inside, the diaphragm under them, the heart between
+  ANAT.lungs = [-1, 1].map(sx => { const l = mesh(new THREE.SphereGeometry(1, 32, 24), new THREE.MeshPhysicalMaterial({ color: 0xf08a9a, roughness: 0.45, transparent: true, opacity: 0.55, depthWrite: false }), g, [sx * 0.078 * s, 0.0, -0.005 * s], [0, 0, sx * -0.12], false); l.scale.set(0.062 * s, 0.12 * s, 0.07 * s); l.userData.base = l.scale.clone(); return l; });
+  ANAT.airGlow = [-1, 1].map(sx => { const a = mesh(new THREE.SphereGeometry(1, 24, 16), glowMat(0x3aa8ff, 1.2), g, [sx * 0.078 * s, -0.01 * s, -0.005 * s], [0, 0, 0], false); a.scale.set(0.045 * s, 0.09 * s, 0.05 * s); a.userData.base = a.scale.clone(); return a; });
+  ANAT.heart = mesh(new THREE.SphereGeometry(0.03 * s, 20, 14), std(0xc0283a, 0.4, 0, { emissive: 0x801020, emissiveIntensity: 0.4 }), g, [0.018 * s, -0.01 * s, -0.045 * s], [0, 0, 0.4], false);
+  ANAT.heart.scale.set(1, 1.2, 0.9);
+  ANAT.dia = mesh(new THREE.SphereGeometry(0.15 * s, 32, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), new THREE.MeshPhysicalMaterial({ color: 0xd04a5a, roughness: 0.5, transparent: true, opacity: 0.8, side: THREE.DoubleSide }), g, [0, -0.2 * s, 0], [0, 0, 0], false);
+  ANAT.dia.scale.set(1, 0.6, 0.85); ANAT.diaY = -0.2 * s;
+  // the piece of meat
+  { const geo = new THREE.SphereGeometry(0.019 * s, 32, 24), p = geo.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i), q = 1 / (0.019 * s); const k = 1 + 0.18 * Math.sin(x * q * 3.1 + 1) * Math.sin(y * q * 2.3) + 0.1 * Math.sin(z * q * 4.7 + 2); p.setXYZ(i, x * k * 1.15, y * k * 0.9, z * k); }   // a smooth, lumpy chunk
+    geo.computeVertexNormals();
+    ANAT.meatM = new THREE.MeshPhysicalMaterial({ color: 0x7a3a22, roughness: 0.5, clearcoat: 0.3, emissive: 0x501a0a, emissiveIntensity: 0.4 });
+    ANAT.meat = mesh(geo, ANAT.meatM, scene, [0, 0, 0], [0, 0, 0], false); ANAT.meat.visible = false; }
+  // particles: air (blue), water (white-blue), a swallowed bite (beige)
+  ANAT.air = Array.from({ length: 40 }, () => { const m = mesh(new THREE.SphereGeometry(0.0035 * s, 8, 6), glowMat(0x6ac8ff, 3), g, [0, 0, 0], [0, 0, 0], false); m.visible = false; return m; });
+  ANAT.water = Array.from({ length: 30 }, () => { const m = mesh(new THREE.SphereGeometry(0.005 * s, 10, 8), new THREE.MeshPhysicalMaterial({ color: 0xbfe6ff, roughness: 0.05, transmission: 0, transparent: true, opacity: 0.8, emissive: 0x4aa8ff, emissiveIntensity: 0.6 }), g, [0, 0, 0], [0, 0, 0], false); m.visible = false; return m; });
+  ANAT.bite = mesh(new THREE.SphereGeometry(0.012 * s, 16, 12), std(0xe8c890, 0.6, 0, { emissive: 0x8a6a30, emissiveIntensity: 0.3 }), g, [0, 0, 0], [0, 0, 0], false); ANAT.bite.visible = false;
+  // a light inside so the organs read in the dark of the body
+  ANAT.light = new THREE.PointLight(0xffffff, 0.35, 0.7, 2); ANAT.light.position.set(0, 0.2 * s, -0.25 * s); g.add(ANAT.light);
+  // the body that turns to hologram: torso, skull (+ ears, nose, lids share skinM), sleeves
+  dual(T.torso.mesh, 0.2); dual(T.skull, 0.22);
+  for (const k of ['mTorso', 'skinM', 'mSleeve']) T[k].transparent = true;
+}
+// X-ray amount k: the body fades to a green ghost, hair and eyes fade, the organs appear
+function xrayToon(T, k) {
+  for (const m of [T.mTorso, T.skinM, T.mSleeve]) { m.opacity = 1 - 0.92 * k; m.depthWrite = k < 0.5; }
+  DUAL.forEach(({ solid, x }) => { if (solid === T.torso.mesh || solid === T.skull) { x.visible = k > 0.01; x.material.uniforms.uK.value = k; } });
+  ANAT.g.visible = k > 0.01; ANAT.meat.visible = ANAT.meat.visible && true;
+  T.headG.children.forEach(c => { if (c !== T.skull && c.material && !T.face.eyes.includes(c)) c.visible = k < 0.5; });
+}
