@@ -1,0 +1,8 @@
+node_modules
+render/stills/
+render/parts/
+render/preview/
+render/*.txt
+_q.mjs
+audio/stems/
+audio/mix.wav
