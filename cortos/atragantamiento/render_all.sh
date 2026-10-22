@@ -15,5 +15,5 @@ chunk() {
 export -f chunk; export SUB
 printf '%s\n' "${starts[@]}" | xargs -P "$JOBS" -I{} bash -c 'chunk {}'
 for a in "${starts[@]}"; do echo "file 'parts/part_$(printf %02d "$a").mp4'"; done > render/parts.txt
-ffmpeg -v error -y -f concat -safe 0 -i render/parts.txt -i audio/mix.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 256k -shortest -movflags +faststart "$OUT"
+ffmpeg -v error -y -f concat -safe 0 -i render/parts.txt -i audio/mix.wav -map 0:v -map 1:a -c:v libx264 -crf 17 -preset slow -pix_fmt yuv420p -r 30 -c:a aac -b:a 256k -movflags +faststart "$OUT"
 echo "done $OUT"
