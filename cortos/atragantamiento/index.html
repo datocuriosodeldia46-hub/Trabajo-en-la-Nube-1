@@ -690,10 +690,9 @@ function applyAll(t) {
   animateAnatomy(t, s);
   // the meat flies out and into grandpa's glass (slow motion)
   if (t >= K.pop + 0.45 && t < K.alone) {
-    const u = clamp((t - (K.pop + 0.45)) / (K.flyEnd - K.pop - 0.45)), a = MOUTH(YOU), b = HOUSE.glass_gramps.position.clone().add(V3(0, 0.07, 0)), e = 1 - Math.pow(1 - u, 1.6);
-    ANAT.meat.position.lerpVectors(a, b, e); ANAT.meat.position.y += 0.35 * Math.sin(Math.PI * e); ANAT.meat.rotation.set(t * 6, t * 4, 0); ANAT.meat.visible = true; ANAT.meat.scale.setScalar(1.6);
-    if (u >= 1) ANAT.meat.position.y = b.y - 0.03;
+    ANAT.meat.position.copy(meatFly(t)); ANAT.meat.rotation.set(t * 6, t * 4, 0); ANAT.meat.visible = true; ANAT.meat.scale.setScalar(1.6);
   }
+  airTrail(t);
   splash(t);
   kitchenScene(t, sh);
   s.desat = 0.55 * ss(17.2, 19.3, t) * (1 - ss(K.lungs, K.lungs + 0.3, t)) + 0.45 * win(t, K.flash, K.flash + 0.15, K.cuela - 0.1, K.cuela) + 0.6 * win(t, K.rule, K.rule + 0.2, K.alone - 0.1, K.alone);
@@ -703,6 +702,25 @@ function applyAll(t) {
   return s;
 }
 // the splash in grandpa's glass
+// the meat's flight path: mouth → arc → grandpa's glass
+function meatFly(t) {
+  const u = clamp((t - (K.pop + 0.45)) / (K.flyEnd - K.pop - 0.45)), b = HOUSE.glass_gramps.position.clone().add(V3(0, 0.07, 0)), e = 1 - Math.pow(1 - u, 1.6);
+  const p = V3().lerpVectors(MOUTH(YOU), b, e); p.y += 0.35 * Math.sin(Math.PI * e);
+  if (u >= 1) p.y = b.y - 0.03;
+  return p;
+}
+// the burst of air that shoots the meat out: blue streak puffs along its path, fading
+const TRAIL = [];
+function airTrail(t) {
+  if (!TRAIL.length) for (let i = 0; i < 14; i++) TRAIL.push(mesh(new THREE.SphereGeometry(0.022, 10, 8), new THREE.MeshBasicMaterial({ color: 0xbfe6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }), scene, [0, 0, 0], [0, 0, 0], false));
+  const a = t - (K.pop + 0.45), on = a > 0 && t < K.flyEnd - 0.2;
+  TRAIL.forEach((m, i) => {
+    const tt = t - 0.035 * (i + 1); m.visible = on && tt > K.pop + 0.45;
+    if (!m.visible) return;
+    m.position.copy(meatFly(tt)).add(V3(nz2(tt, i) * 0.02, nz2(tt, i + 5) * 0.02, nz2(tt, i + 9) * 0.02));
+    m.scale.setScalar(0.45 + i * 0.1); m.material.opacity = 0.4 * (1 - i / 14) * (1 - ss(0.6, 1.8, a));
+  });
+}
 const SPL = [];
 function splash(t) {
   if (!SPL.length) for (let i = 0; i < 18; i++) { const m = mesh(new THREE.SphereGeometry(0.008, 8, 6), new THREE.MeshPhysicalMaterial({ color: 0x9a1030, roughness: 0.05, transparent: true, opacity: 0.9 }), scene, [0, 0, 0], [0, 0, 0], false); m.userData.v = V3(Math.cos(i * 2.4) * (0.4 + (i % 3) * 0.2), 1.2 + (i % 4) * 0.3, Math.sin(i * 2.4) * (0.4 + (i % 3) * 0.2)); SPL.push(m); }
@@ -747,6 +765,7 @@ function animateAnatomy(t, s) {
   A.heart.scale.set(1, 1.2, 0.9).multiplyScalar(1 + 0.08 * Math.max(0, Math.sin(t * (t > 16.5 && t < K.pop ? 14 : 8))));
 }
 // ── the kitchen, later that night: alone, the phone, the chair
+const RELIEF_END = { brow: 0, browUp: 0.55, eyeOpen: 0.55, pupil: 1, mouthOpen: 0.35, smile: 1, flush: 0.35, pale: 0, lookX: 0, lookY: 0.1 };
 function kitchenScene(t, sh) {
   const on = t >= K.alone; YOU2.g.visible = on; HOUSE.phone.visible = on && t >= K.call - 0.1;
   if (!on) { YOU2.g.position.set(0, -10, 0); return; }
@@ -760,14 +779,14 @@ function kitchenScene(t, sh) {
   else {
     const lean = ss(K.chair, K.chair + 0.35, t);
     YOU2.g.position.z -= 0.12 * lean + 0.05 * th; YOU2.g.position.y -= 0.04 * th;
-    P = bentPose(lean * 0.55 + 0.12 * th, t < K.pop2 ? 'neck' : 'loose');
+    P = bentPose((lean * 0.55 + 0.12 * th) * (1 - 0.6 * ss(K.pop2 + 0.25, K.pop2 + 0.8, t)), t < K.pop2 ? 'neck' : 'loose');
     if (t < K.pop2) P.hands = { 1: hand(V3(0.2, 0.15, -0.35), V3(0.6, 0, 0.8), V3(0, 1, 0), 0.9, V3(0, -0.6, -1)), [-1]: hand(V3(-0.2, 0.15, -0.35), V3(-0.6, 0, 0.8), V3(0, 1, 0), 0.9, V3(0, -0.6, -1)) };
   }
   poseToon(YOU2, P);
-  faceToon(YOU2, t < K.pop2 + 0.15 ? Object.assign({}, FACE.panic, { pale: 0.5, flush: 0.5 }) : mixFace(FACE.shock, FACE.relief, ss(K.pop2 + 0.2, 43.0, t)));
+  faceToon(YOU2, t < K.pop2 + 0.15 ? Object.assign({}, FACE.panic, { pale: 0.5, flush: 0.5 }) : mixFace(FACE.shock, RELIEF_END, ss(K.pop2 + 0.15, 42.85, t)));
   if (t < K.chair) { HOUSE.phone.matrixAutoUpdate = false; HOUSE.phone.matrix.copy(HOUSE.kitchen.matrixWorld).invert().multiply(YOU2.g.matrixWorld).multiply(YOU2.hands[1].root.matrix).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2).setPosition(-0.03, 0, 0.05)); HOUSE.phone.matrixWorldNeedsUpdate = true; }
   else { HOUSE.phone.matrixAutoUpdate = true; HOUSE.phone.position.set(0.25, 0.47, -0.62); HOUSE.phone.rotation.set(-Math.PI / 2, 0, 0.4); }
-  if (t >= K.pop2) { const u = clamp((t - K.pop2) / 0.6); ANAT.meat.position.copy(MOUTH(YOU2)).add(V3(0, 0.4 * u - 1.2 * u * u, -0.5 * u)); ANAT.meat.visible = true; ANAT.meat.scale.setScalar(1.6); ANAT.meat.rotation.set(t * 7, t * 3, 0); }
+  if (t >= K.pop2) { const u = clamp((t - K.pop2) / 0.6); ANAT.meat.position.copy(MOUTH(YOU2)).add(V3(0, 0.35 * u - 1.3 * u * u, -0.8 * u)); ANAT.meat.visible = u < 1; ANAT.meat.scale.setScalar(2.2); ANAT.meat.rotation.set(t * 7, t * 3, 0); }
   else ANAT.meat.visible = false;
 }
 
@@ -816,12 +835,12 @@ const SHOTS = [
         return C(p.add(drift(t, 0.01)), q, 46, { coc: 6 }); }
       if (t < K.pop + 0.45) return C(CH([-0.3, 0.27, -0.24]), CH([0, 0.27, -0.03]), 38, { coc: 6, near: 0.005 });
       const m = ANAT.meat.position, u = ss(K.pop + 0.45, K.flyEnd, t);
-      return C(V3().lerpVectors(FL([-0.6, 1.45, -0.9]), V3(0.15, 1.55, -0.65), u), m.clone(), 44, { coc: 4, focus: 1.0 }); } },
+      return C(V3().lerpVectors(FL([-0.95, 1.2, -1.05]), V3(0.2, 1.3, -0.8), u), m.clone(), 36, { coc: 4, focus: 1.0 }); } },
   // 8. the rule: the family scene, instructional
   { t1: K.alone, f: (t) => { const a = lerp(0.6, -0.55, (t - K.rule) / (K.alone - K.rule)); return C(FL([Math.sin(a) * 1.8, 1.6, -Math.cos(a) * 1.7]), FL([0, 1.1, 0.15]), 56, { coc: 3 }); } },
   // 9. alone in the kitchen: through the doorway, the phone, the chair
   { t1: 99, f: (t) => { const k2 = (v) => { const p = YOU2.g.localToWorld(V3()); p.y = 0; return p.add(V3(...v)); };
-      const [p, q] = path(t, [[K.alone, () => k2([-0.9, 1.7, -1.1]), () => k2([0, 1.3, -0.2])], [K.call, () => k2([0.75, 1.5, -0.95]), () => k2([0.05, 1.4, -0.1])], [K.chair - 0.2, () => k2([0.6, 1.55, -0.8]), () => k2([0.08, 1.45, -0.05])], [K.pop2, () => k2([1.0, 1.35, -1.15]), () => k2([0, 1.0, -0.3])], [K.end, () => k2([0.75, 1.5, -1.0]), () => k2([0, 1.25, -0.25])]]);
+      const [p, q] = path(t, [[K.alone, () => k2([-0.9, 1.7, -1.1]), () => k2([0, 1.3, -0.2])], [K.call, () => k2([0.75, 1.5, -0.95]), () => k2([0.05, 1.4, -0.1])], [K.chair - 0.2, () => k2([0.6, 1.55, -0.8]), () => k2([0.08, 1.45, -0.05])], [K.pop2, () => k2([1.0, 1.35, -1.15]), () => k2([0, 1.0, -0.3])], [K.end, () => k2([0.35, 1.6, -0.75]), () => k2([0, 1.5, -0.2])]]);
       return C(p.add(drift(t, 0.01)), q, 48, { coc: 4 }); } },
 ];
 SHOTS.forEach((s, i) => s.t0 = i ? SHOTS[i - 1].t1 : -1);
