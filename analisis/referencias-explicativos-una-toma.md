@@ -103,7 +103,13 @@ El espectador aprende el código en segundos y después "lee" la escena sin esfu
 ## 6. Qué cambiar en nuestros videos (Lucas y los siguientes)
 
 ### Guion
-1. **Gancho en segunda persona sobre un hábito real.** No "Lucas va a ochenta…", sino algo como "**Si andas en moto sin chaleco, esto es lo que pasa en un choque**" o "**Si te avientas al suelo en un choque, así te salva un chaleco con airbag**". El protagonista puede seguir siendo Lucas, pero la primera frase es para **ti**.
+1. **Gancho en segunda persona, en presente y metido en la acción.** "Si andas en moto…" no sirve: quien lo ve ya sabe que sí, y suena a anuncio. El gancho te pone **dentro del peligro, en este instante**: "**Estás a punto de chocar…**", con la imagen mostrándolo en el cuadro 0. La frase nombra lo que pasa y la imagen ya lo está haciendo. Así funcionan las dos referencias: B arranca con *tu* mano bajando el control a 18. Variantes del mismo molde:
+   - "Estás a punto de chocar… y tu chaleco ya lo sabe."
+   - "En 3 segundos vas a salir volando por encima de este camión."
+   - "Este camión te va a cerrar el paso… y no vas a poder frenar."
+   - "Te quedan 0,2 segundos antes del golpe."
+
+   **Cuadro 0 (vista en primera persona):** tus manos con guantes en el manubrio, el velocímetro en 80 y el camión ya cruzándose a 3 m, con la direccional parpadeando. Hay movimiento desde el primer cuadro, sin establecer el lugar ni presentar a nadie. El nombre (Lucas) puede llegar después, o no llegar nunca.
 2. **Mito roto en la segunda frase.** Por ejemplo: "El airbag no se infla cuando chocas. **Se infla antes**".
 3. **Consecuencia con número:** cuánto reduce la lesión, cuántos milisegundos tarda. Solo cifras verificables y redondas.
 4. **Terminar en una regla que se pueda guardar**, por ejemplo "Revisa que tu chaleco tenga sensor y cartucho cargado", y en un cartel de dato (**"SE INFLA EN 0,05 s"**).
@@ -118,7 +124,7 @@ El espectador aprende el código en segundos y después "lee" la escena sin esfu
    Nuestro sistema de planos ya lo permite: basta con encadenar trayectorias continuas y con desenfoque de movimiento.
 7. **Un cambio visual por subtítulo**: algo se mueve, aparece, cambia de color o la aguja del termómetro avanza. No hace falta cortar.
 8. **Cambios de escala** (de calle a chaleco, a sensor, a chip), como hacen ellos con la olla, la comida y la bacteria. Es más fácil de entender que los rayos X muy cercanos, que se leían abstractos.
-9. **Primera persona en el gancho.** Que el espectador vea "sus" manos en el manubrio, como la mano con el control remoto en B.
+9. **Primera persona en el gancho.** Que el espectador vea "sus" manos en el manubrio, como la mano con el control remoto en B. La cámara sale de esa vista sin cortar (un giro rápido hacia afuera) para mostrar la escena completa cuando empieza la explicación.
 
 ### Estilo y producción
 10. **Bajar el realismo y subir la claridad.** Un personaje más simple y expresivo, con la cara visible (enojado → asustado → sonriente), funciona igual o mejor y nos deja producir más rápido. El casco integral de Lucas le quita expresión.
